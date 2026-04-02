@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'login_page.dart';
+import 'user_account.dart';
+
 
 class HomePage extends StatelessWidget {
   const HomePage({super.key});
@@ -10,16 +12,18 @@ class HomePage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 2,
+      length: 3,
       child: Scaffold(
         appBar: AppBar(
+          title: const Text("Estacionamiento (Nombre/en base de datos)"),
+          centerTitle: true,
+          elevation: 2,
 
-          title: const Text("Estacionamiento"),
-          automaticallyImplyLeading: true,
           bottom: const TabBar(
             tabs: [
-              Tab(text: "Planta 1"),
-              Tab(text: "Planta 2"),
+              Tab(icon: Icon(Icons.local_parking), text: "Cajones"),
+              Tab(icon: Icon(Icons.map), text: "Mapa"),
+              Tab(icon: Icon(Icons.qr_code), text: "QR"),
             ],
           ),
         ),
@@ -57,6 +61,22 @@ class HomePage extends StatelessWidget {
                 },
               ),
 
+              //TITULO CUENTAAAA
+              ListTile(
+                leading: const Icon(Icons.person),
+                title: const Text("Cuenta"),
+                onTap: () {
+                  // 1. Cerramos el Drawer antes de navegar
+                  Navigator.pop(context);
+
+                  // 2. Navegamos a la página de cuenta de usuario
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const UserAccount()),
+                  );
+                },
+              ),
+
               //SE COLOCA EL TITULO CERRAR SESION
               ListTile(
                 leading: const Icon(Icons.logout),
@@ -73,16 +93,103 @@ class HomePage extends StatelessWidget {
           ),
         ),
 
+
         body: const TabBarView(
           children: [
             ParkingGrid(index: 0),
-            ParkingGrid(index: 1),
+            MapPage(),
+            QRPage(),
           ],
         ),
       ),
     );
   }
 }
+
+
+class MapPage extends StatelessWidget {
+  const MapPage({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text("Mapa")),
+      body: Stack(
+        children: [
+
+          // MAPA (placeholder por ahora)
+          Container(
+            color: Colors.grey[300],
+            child: const Center(child: Text("Mapa")),
+          ),
+
+          // INFO DEL CAJÓN
+          Positioned(
+            bottom: 20,
+            left: 20,
+            right: 20,
+            child: Card(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(15),
+              ),
+              child: ListTile(
+                title: const Text("Cajón reservado"),
+                subtitle: const Text("Sigue la ruta"),
+                trailing: ElevatedButton(
+                  onPressed: () {},
+                  child: const Text("Ir"),
+                ),
+              ),
+            ),
+          )
+        ],
+      ),
+    );
+  }
+}
+
+class QRPage extends StatelessWidget {
+  const QRPage({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text("Acceso QR")),
+      body: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+
+          Center(
+            child: Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(20),
+                boxShadow: const [
+                  BoxShadow(blurRadius: 10, color: Colors.black12)
+                ],
+              ),
+              child: const Icon(Icons.qr_code, size: 200),
+            ),
+          ),
+
+          const SizedBox(height: 20),
+
+          const Text("Escanea para entrar/salir"),
+
+          const SizedBox(height: 20),
+
+          ElevatedButton.icon(
+            onPressed: () {},
+            icon: const Icon(Icons.camera_alt),
+            label: const Text("Escanear QR"),
+          )
+        ],
+      ),
+    );
+  }
+}
+
 
 // ESTADO GLOBAL DEL BOTON (TENIENDO COMO VARIABLES SI ESTA OCUPADO (ESTANDO COMO INICIAL EN FALSO), EL TIEMPO Y COMO TAL LOS TIMERS
 class ParkingState {
@@ -122,7 +229,7 @@ class _ParkingGridState extends State<ParkingGrid> {
     super.initState();
     initNotificaciones();
 
-    // 🔥 TIMER GLOBAL QUE ACTUALIZA UI
+
     ParkingState.iniciarGlobal(() {
       if (mounted) {
         setState(() {});
@@ -224,21 +331,43 @@ class _ParkingGridState extends State<ParkingGrid> {
     return Center(
       child: GestureDetector(
         onTap: () => seleccionar(i),
-        child: Container(
-          width: 150,
-          height: 150,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 300),
+          width: 160,
+          height: 160,
           decoration: BoxDecoration(
             color: ocupado ? Colors.red : Colors.green,
-            borderRadius: BorderRadius.circular(15),
+            borderRadius: BorderRadius.circular(20),
+            boxShadow: const [
+              BoxShadow(
+                color: Colors.black26,
+                blurRadius: 8,
+                offset: Offset(0, 4),
+              )
+            ],
           ),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Text("C${i + 1}",
-                  style: const TextStyle(color: Colors.white, fontSize: 20)),
+              const Icon(
+                Icons.local_parking,
+                color: Colors.white,
+                size: 40,
+              ),
+              const SizedBox(height: 10),
+              Text(
+                "C${i + 1}",
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 22,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
               if (ocupado)
-                Text("${ParkingState.tiempos[i]}s",
-                    style: const TextStyle(color: Colors.white)),
+                Text(
+                  "${ParkingState.tiempos[i]}s",
+                  style: const TextStyle(color: Colors.white70),
+                ),
             ],
           ),
         ),
