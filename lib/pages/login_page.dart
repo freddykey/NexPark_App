@@ -44,7 +44,14 @@ class _LoginPageState extends State<LoginPage> {
             child: Column(
               children: [
 
-                Image.asset('assets/logo.png', height: 300),
+                Image.asset('assets/logo.png', height: 200),
+
+                const Text(
+                  "Encuentra. Reserva. Aparca.",
+                  style: TextStyle(color: Color(0xFF828282)),
+                ),
+
+                const SizedBox(height: 40),
 
                 const Text(
                   "Bienvenido",
