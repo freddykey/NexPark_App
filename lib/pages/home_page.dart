@@ -112,38 +112,35 @@ class MapPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text("Mapa")),
-      body: Stack(
-        children: [
 
-          // MAPA (placeholder por ahora)
-          Container(
-            color: Colors.grey[300],
-            child: const Center(child: Text("Mapa")),
-          ),
+    return Stack(
+      children: [
+        // MAPA
+        Container(
+          color: Colors.grey[300],
+          child: const Center(child: Text("Mapa")),
+        ),
 
-          // INFO DEL CAJÓN
-          Positioned(
-            bottom: 20,
-            left: 20,
-            right: 20,
-            child: Card(
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(15),
-              ),
-              child: ListTile(
-                title: const Text("Cajón reservado"),
-                subtitle: const Text("Sigue la ruta"),
-                trailing: ElevatedButton(
-                  onPressed: () {},
-                  child: const Text("Ir"),
-                ),
+        // INFO DEL CAJÓN
+        Positioned(
+          bottom: 20,
+          left: 20,
+          right: 20,
+          child: Card(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(15),
+            ),
+            child: ListTile(
+              title: const Text("Cajón reservado"),
+              subtitle: const Text("Sigue la ruta"),
+              trailing: ElevatedButton(
+                onPressed: () {},
+                child: const Text("Ir"),
               ),
             ),
-          )
-        ],
-      ),
+          ),
+        )
+      ],
     );
   }
 }
@@ -153,39 +150,32 @@ class QRPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text("Acceso QR")),
-      body: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
 
-          Center(
-            child: Container(
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(20),
-                boxShadow: const [
-                  BoxShadow(blurRadius: 10, color: Colors.black12)
-                ],
-              ),
-              child: const Icon(Icons.qr_code, size: 200),
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Center(
+          child: Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(20),
+              boxShadow: const [
+                BoxShadow(blurRadius: 10, color: Colors.black12)
+              ],
             ),
+            child: const Icon(Icons.qr_code, size: 200),
           ),
-
-          const SizedBox(height: 20),
-
-          const Text("Escanea para entrar/salir"),
-
-          const SizedBox(height: 20),
-
-          ElevatedButton.icon(
-            onPressed: () {},
-            icon: const Icon(Icons.camera_alt),
-            label: const Text("Escanear QR"),
-          )
-        ],
-      ),
+        ),
+        const SizedBox(height: 20),
+        const Text("Escanea para entrar/salir"),
+        const SizedBox(height: 20),
+        ElevatedButton.icon(
+          onPressed: () {},
+          icon: const Icon(Icons.camera_alt),
+          label: const Text("Escanear QR"),
+        )
+      ],
     );
   }
 }
