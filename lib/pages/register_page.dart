@@ -1,7 +1,77 @@
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
 
-class RegisterPage extends StatelessWidget {
+class RegisterPage extends StatefulWidget {
   const RegisterPage({super.key});
+
+  @override
+  State<RegisterPage> createState() => _RegisterPageState();
+}
+
+class _RegisterPageState extends State<RegisterPage> {
+  // DEFINIR CONTROLADORES PARA CAPTURAR EL TEXTO
+  final TextEditingController nombreController = TextEditingController();
+  final TextEditingController paternoController = TextEditingController();
+  final TextEditingController maternoController = TextEditingController();
+  final TextEditingController correoController = TextEditingController();
+  final TextEditingController passwordController = TextEditingController();
+  final TextEditingController telefonoController = TextEditingController();
+
+  // FUNCION PARA ENVIAR LOS DATOS AL HOSTING
+  Future<void> registrarUsuario() async {
+    // VALIDACIÓN
+    if (nombreController.text.isEmpty || correoController.text.isEmpty || paternoController.text.isEmpty ||
+        maternoController.text.isEmpty || passwordController.text.isEmpty || telefonoController.text.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Por favor rellena todos los campos")),
+      );
+      return;
+    }
+
+    // METODO DE CARGA
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(child: CircularProgressIndicator()),
+    );
+
+    try {
+
+      var url = Uri.parse('https://carlossalinas.webpro1213.com/api/registrar.php');
+
+      var response = await http.post(url, body: {
+        'nombre': nombreController.text,
+        'paterno': paternoController.text,
+        'materno': maternoController.text,
+        'correo': correoController.text,
+        'telefono': telefonoController.text,
+        'password': passwordController.text,
+      });
+
+      if (!mounted) return;
+      Navigator.pop(context); // TERMINA DE CARGAR QUITANDO LA VISUALIZACION PARA EL USUARIO QUE ESTA CARGANDO
+
+      var res = json.decode(response.body);
+
+      if (res['status'] == 'success') {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("¡Registro exitoso! Ya puedes iniciar sesión")),
+        );
+        Navigator.pop(context); // REGRESA AL LOGIN
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Error: ${res['message']}")),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      Navigator.pop(context);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Error de conexión con el servidor")),
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -30,29 +100,46 @@ class RegisterPage extends StatelessWidget {
               ),
               const SizedBox(height: 30),
 
-              // Campo Nombre
-              _buildTextField("Nombre completo", Icons.person),
+              // CAMPO NOMBRE
+              _buildTextField("Nombre completo", Icons.person, controller: nombreController),
               const SizedBox(height: 15),
 
-              // Campo Correo
-              _buildTextField("Correo electrónico", Icons.email),
+              // CAMPOS APELLIDOS
+              Row(
+                children: [
+                  Expanded(
+                    child: _buildTextField("A. Paterno", Icons.person_outline, controller: paternoController),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: _buildTextField("A. Materno", Icons.person_outline, controller: maternoController),
+                  ),
+                ],
+              ),
+
+              const SizedBox(height: 15),
+              // CAMPO CORREO
+              _buildTextField("Correo electrónico", Icons.email, controller: correoController),
               const SizedBox(height: 15),
 
-              // Campo Contraseña
-              _buildTextField("Contraseña", Icons.lock, obscure: true),
+              // CAMPO CONTRASEÑA
+              _buildTextField("Contraseña", Icons.lock, obscure: true, controller: passwordController),
               const SizedBox(height: 15),
-              // Campo Numero de telefonoo
-              _buildTextField("Número de Teléfono", Icons.phone, keyboardType: TextInputType.phone ),
+
+              // CAMPO NUMERO DE TELEFONO
+              _buildTextField(
+                "Número de Teléfono",
+                Icons.phone,
+                keyboardType: TextInputType.phone,
+                controller: telefonoController,
+              ),
               const SizedBox(height: 30),
 
               SizedBox(
                 width: double.infinity,
                 height: 50,
                 child: ElevatedButton(
-                  onPressed: () {
-                    // Lógica para registrar usuario
-                    Navigator.pop(context); // Regresa al login tras registrarse
-                  },
+                  onPressed: registrarUsuario,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFFEB5757),
                     shape: RoundedRectangleBorder(
@@ -69,9 +156,14 @@ class RegisterPage extends StatelessWidget {
     );
   }
 
-  // PARA GLOBALIZAR LA FORMA PARA INGRESAR DATOS
-  Widget _buildTextField(String hint, IconData icon, {bool obscure = false, TextInputType keyboardType = TextInputType.text}) {
+
+  Widget _buildTextField(String hint, IconData icon, {
+    required TextEditingController controller,
+    bool obscure = false,
+    TextInputType keyboardType = TextInputType.text
+  }) {
     return TextField(
+      controller: controller,
       obscureText: obscure,
       keyboardType: keyboardType,
       decoration: InputDecoration(
