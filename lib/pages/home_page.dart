@@ -2,12 +2,49 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'login_page.dart';
 import 'user_account.dart';
 
-
-class HomePage extends StatelessWidget {
+class HomePage extends StatefulWidget {
   const HomePage({super.key});
+
+  @override
+  State<HomePage> createState() => _HomePageState();
+}
+
+class _HomePageState extends State<HomePage> {
+  // VARIABLES PARA ALMACENAR DATOS DEL USUARIO
+  String nombre = "Cargando...";
+  String correo = "...";
+  String foto = "";
+  @override
+  void initState() {
+    super.initState();
+    _cargarDatosUsuario();
+  }
+
+  // FUNCION PARA OBTENER DATOS GUARDADOS EN EL LOGIN
+  Future<void> _cargarDatosUsuario() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      nombre = prefs.getString('nombre_usuario') ?? "Usuario";
+      correo = prefs.getString('correo_usuario') ?? "Sin correo";
+      foto = prefs.getString('foto_usuario') ?? "";
+    });
+  }
+
+
+  Future<void> _logout() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.clear();
+    if (!mounted) return;
+    Navigator.pushAndRemoveUntil(
+      context,
+      MaterialPageRoute(builder: (_) => const LoginPage()),
+          (route) => false,
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -15,11 +52,19 @@ class HomePage extends StatelessWidget {
       length: 3,
       child: Scaffold(
         appBar: AppBar(
-          title: const Text("Estacionamiento (Nombre/en base de datos)"),
+          title: Image.asset(
+            'assets/logowhite.png',
+            height: 40,
+            fit: BoxFit.contain,
+          ),
           centerTitle: true,
           elevation: 2,
-
+          backgroundColor: const Color(0xFF166088),
+          foregroundColor: Colors.white,
           bottom: const TabBar(
+            labelColor: Colors.white,
+            unselectedLabelColor: Colors.white70,
+            indicatorColor: Colors.white,
             tabs: [
               Tab(icon: Icon(Icons.local_parking), text: "Cajones"),
               Tab(icon: Icon(Icons.map), text: "Mapa"),
@@ -27,73 +72,77 @@ class HomePage extends StatelessWidget {
             ],
           ),
         ),
-
-        // EL DRAWER ES PARA EL MENU DESPLEGABLE DONDE SE MANEJA COMO UNA LISTA EN DONDE POR EL MOMENTO SE COLOCA LAS OPCIONES DEL MENU E INICIO (USANDO ICONOS PREDETERMINADOS DEL FLUTTER)
         drawer: Drawer(
-          child: ListView(
+          child: Column(
             children: [
+              UserAccountsDrawerHeader(
+                decoration: const BoxDecoration(
+                  color: Color(0xFF166088),
+                ),
 
-              //SE USA CONTAINER PARA UNA CABECERA DE COLOR AZUL EN DONDE TIENE EL MENU, SE ESTABA USANDO DRAWERHEADER PERO TENIA UN TAMAÑO PREDETERMINADO QUE HACIA QUE LUCIERA MAL.
-              Container(
-                height: 120,
-                color: Colors.black26,
-                padding: const EdgeInsets.all(10),
-                child: Row(
-                  children: [
-
-                    Image.asset(
-                      'assets/logo.png',
-                      height: 80,
+                currentAccountPicture: CircleAvatar(
+                  backgroundColor: Colors.white,
+                  backgroundImage: foto.isNotEmpty
+                      ? NetworkImage(foto)
+                      : null,
+                  child: foto.isEmpty
+                      ? Text(
+                    nombre.isNotEmpty ? nombre[0].toUpperCase() : "U",
+                    style: const TextStyle(
+                      fontSize: 40,
+                      color: Color(0xFF166088),
+                      fontWeight: FontWeight.bold,
                     ),
+                  )
+                      : null,
+                ),
 
-
+                accountName: Text(
+                  nombre,
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+                ),
+                accountEmail: Text(correo),
+              ),
+              Expanded(
+                child: ListView(
+                  padding: EdgeInsets.zero,
+                  children: [
+                    _buildDrawerItem(
+                      icon: Icons.home_rounded,
+                      title: "Inicio",
+                      onTap: () => Navigator.pop(context),
+                    ),
+                    _buildDrawerItem(
+                      icon: Icons.person_rounded,
+                      title: "Mi Cuenta",
+                      onTap: () {
+                        Navigator.pop(context);
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (_) => const UserAccount()),
+                        );
+                      },
+                    ),
+                    const Divider(indent: 20, endIndent: 20),
+                    _buildDrawerItem(
+                      icon: Icons.logout_rounded,
+                      title: "Cerrar sesión",
+                      isSelected: true,
+                      onTap: _logout,
+                    ),
                   ],
                 ),
               ),
-
-              //SE COLOCA EL TITULO DE INICIO
-              ListTile(
-                leading: const Icon(Icons.home),
-
-                title: const Text("Inicio"),
-                onTap: () {
-                  Navigator.pop(context);
-                },
-              ),
-
-              //TITULO CUENTAAAA
-              ListTile(
-                leading: const Icon(Icons.person),
-                title: const Text("Cuenta"),
-                onTap: () {
-                  // 1. Cerramos el Drawer antes de navegar
-                  Navigator.pop(context);
-
-                  // 2. Navegamos a la página de cuenta de usuario
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (_) => const UserAccount()),
-                  );
-                },
-              ),
-
-              //SE COLOCA EL TITULO CERRAR SESION
-              ListTile(
-                leading: const Icon(Icons.logout),
-                title: const Text("Cerrar sesión"),
-                onTap: () {
-                  Navigator.pushAndRemoveUntil(
-                    context,
-                    MaterialPageRoute(builder: (_) => const LoginPage()),
-                        (route) => false,
-                  );
-                },
+              const Padding(
+                padding: EdgeInsets.all(20.0),
+                child: Text(
+                  "NexPark v1.0.2",
+                  style: TextStyle(color: Colors.grey, fontSize: 12),
+                ),
               ),
             ],
           ),
         ),
-
-
         body: const TabBarView(
           children: [
             ParkingGrid(index: 0),
@@ -104,9 +153,28 @@ class HomePage extends StatelessWidget {
       ),
     );
   }
+
+  Widget _buildDrawerItem({
+    required IconData icon,
+    required String title,
+    required VoidCallback onTap,
+    Color color = const Color(0xFF166088),
+    bool isSelected = false,
+  }) {
+    return ListTile(
+      leading: Icon(icon, color: isSelected ? const Color(0xFFEB5757) : color),
+      title: Text(
+        title,
+        style: TextStyle(
+          color: isSelected ? const Color(0xFFEB5757) : Colors.black87,
+          fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+        ),
+      ),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 5),
+      onTap: onTap,
+    );
+  }
 }
-
-
 class MapPage extends StatelessWidget {
   const MapPage({super.key});
 
@@ -198,7 +266,7 @@ class ParkingState {
   }
 }
 
-// ------------------------------
+
 
 class ParkingGrid extends StatefulWidget {
   final int index;

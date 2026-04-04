@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "568559107230",
+    "project_id": "nexpark-e6022",
+    "storage_bucket": "nexpark-e6022.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:568559107230:android:e5962f27301a54e0d48f8f",
+        "android_client_info": {
+          "package_name": "com.nextpark.nextpark"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "568559107230-j8ebdh6d5ak8osnujremffq0p47ki20o.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.nextpark.nextpark",
+            "certificate_hash": "05fa8dde8cecd9f017b4478ffe36de66b0c24e72"
+          }
+        },
+        {
+          "client_id": "568559107230-guucpilvpiobkunpt41sohm1imrklec1.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC9KSg5JBsAcwM9kQwfmJ1e-b0F-ke4fu4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "568559107230-guucpilvpiobkunpt41sohm1imrklec1.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

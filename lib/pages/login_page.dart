@@ -4,6 +4,7 @@ import 'register_page.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -13,11 +14,16 @@ class LoginPage extends StatefulWidget {
 }
 
 class _LoginPageState extends State<LoginPage> {
-
   final TextEditingController correoController = TextEditingController();
   final TextEditingController passwordController = TextEditingController();
 
-  // FUNCIÓN AUXILIAR PARA MOSTRAR ERRORES (Evita que la pantalla se ponga negra al fallar)
+  // Configuración de Google Sign-In
+  // Usamos el Client ID Web para asegurar compatibilidad con el servidor
+  final GoogleSignIn _googleSignIn = GoogleSignIn(
+    clientId: '568559107230-guucpilvpiobkunpt41sohm1imrklec1.apps.googleusercontent.com',
+    scopes: ['email'],
+  );
+
   void _mostrarError(String mensaje) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -28,7 +34,65 @@ class _LoginPageState extends State<LoginPage> {
     );
   }
 
-  // FUNCION PARA VALIDAR LA CONTRA EN EL SERVIDOR
+  // --- FUNCIÓN DE LOGIN CON GOOGLE ---
+  Future<void> loginConGoogle() async {
+    try {
+      // 1. Iniciar sesión con Google
+      final GoogleSignInAccount? account = await _googleSignIn.signIn();
+
+      if (account != null) {
+        print("Google OK: ${account.email}");
+
+        // 2. URL de tu API en Hostinger
+        // Si HTTPS te sigue dando "Vacío", prueba cambiándolo a http://
+        var url = Uri.parse('https://carlossalinas.webpro1213.com/api/login_google.php');
+
+        var response = await http.post(url, body: {
+          'email': account.email,
+          'nombre': account.displayName ?? "Usuario NexPark",
+          'google_id': account.id,
+        }).timeout(const Duration(seconds: 10));
+
+        print("STATUS CODE: ${response.statusCode}");
+        print("BODY RAW:");
+        print(response.body);
+
+        // 4. Validar respuesta del servidor
+        if (response.body.trim().isEmpty) {
+          _mostrarError("El servidor respondió vacío. Revisa el PHP.");
+          return;
+        }
+
+        try {
+          var res = json.decode(response.body);
+
+          if (res['status'] == 'success') {
+            // Guardar sesión localmente
+            SharedPreferences prefs = await SharedPreferences.getInstance();
+            await prefs.setBool('isLoggedIn', true);
+            await prefs.setInt('id_usuario', int.parse(res['user']['id'].toString()));
+            await prefs.setString('nombre_usuario', res['user']['nombre']);
+            await prefs.setString('correo_usuario', account.email);
+            await prefs.setString('foto_usuario', account.photoUrl ?? "");
+
+            print("Login Exitoso en NexPark");
+            if (!mounted) return;
+            Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const HomePage()));
+          } else {
+            _mostrarError(res['message'] ?? "Error en el servidor");
+          }
+        } catch (e) {
+          // Si el servidor manda un error de PHP, aquí lo atrapamos
+          _mostrarError("Error de formato: ${response.body}");
+        }
+      }
+    } catch (error) {
+      print("Error en Google Sign-In: $error");
+      _mostrarError("Error de conexión con Google: $error");
+    }
+  }
+
+  // --- FUNCIÓN PARA LOGIN NORMAL ---
   Future<void> validarLogin() async {
     String correo = correoController.text.trim();
     String pass = passwordController.text.trim();
@@ -45,46 +109,37 @@ class _LoginPageState extends State<LoginPage> {
     );
 
     try {
-      // RECUERDA: Usar la URL pública de tu dominio, no la del administrador de archivos
-      var url = Uri.parse('https://carlossalinas.webpro1213.com/api/login.php');
-
+      var url = Uri.parse('http://carlossalinas.webpro1213.com/api/login.php');
       var response = await http.post(url, body: {
         'correo': correo,
         'password': pass,
       }).timeout(const Duration(seconds: 10));
 
       if (!mounted) return;
-      Navigator.pop(context);
+      Navigator.pop(context); // Cerrar cargando
 
-      // VALIDACIÓN DE RESPUESTA EXITOSA DEL SERVIDOR
-      if (response.statusCode == 200) {
-        var res = json.decode(response.body);
+      if (response.body.isEmpty) {
+        _mostrarError("Respuesta vacía del servidor.");
+        return;
+      }
 
-        if (res['status'] == 'success') {
-          // SE USA ESTE IMPORT PARA QUE LA APP RECUERDE INGRESOS FUTUROS MEDIANTE LA ID DEL USUARIO
-          SharedPreferences prefs = await SharedPreferences.getInstance();
-          await prefs.setBool('isLoggedIn', true);
-          await prefs.setInt('id_usuario', int.parse(res['user']['id'].toString()));
-          await prefs.setString('nombre_usuario', res['user']['nombre']);
+      var res = json.decode(response.body);
+      if (res['status'] == 'success') {
+        SharedPreferences prefs = await SharedPreferences.getInstance();
+        await prefs.setBool('isLoggedIn', true);
+        await prefs.setInt('id_usuario', int.parse(res['user']['id'].toString()));
+        await prefs.setString('nombre_usuario', res['user']['nombre']);
+        await prefs.setString('correo_usuario', correo);
 
-          if (!mounted) return;
-
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(builder: (context) => const HomePage()),
-          );
-        } else {
-          // ERROR SI LA CREDENCIALES NO EXISTEN O ESTAN MAL
-          _mostrarError(res['message'] ?? "Correo o contraseña incorrectos");
-        }
+        if (!mounted) return;
+        Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const HomePage()));
       } else {
-        // ERROR SI EL ARCHIVO PHP FALLO O NO SE ENCONTRO
-        _mostrarError("Error en el servidor: ${response.statusCode}");
+        _mostrarError(res['message'] ?? "Correo o contraseña incorrectos");
       }
     } catch (e) {
       if (!mounted) return;
-      Navigator.pop(context);
-      _mostrarError("Error de conexión con el servidor");
+      if (Navigator.canPop(context)) Navigator.pop(context);
+      _mostrarError("Error de conexión: $e");
     }
   }
 
@@ -98,35 +153,15 @@ class _LoginPageState extends State<LoginPage> {
             padding: const EdgeInsets.all(25.0),
             child: Column(
               children: [
-
+                // --- AQUÍ ESTÁ TU LOGO DE REGRESO, PERDÓN ---
                 Image.asset('assets/logo.png', height: 150),
-
-                const Text(
-                  "Encuentra. Reserva. Aparca.",
-                  style: TextStyle(color: Color(0xFF828282)),
-                ),
-
+                const Text("Encuentra. Reserva. Aparca.", style: TextStyle(color: Color(0xFF828282))),
                 const SizedBox(height: 40),
-
-                const Text(
-                  "Bienvenido",
-                  style: TextStyle(
-                    fontSize: 28,
-                    fontWeight: FontWeight.bold,
-                    color: Color(0xFF166088),
-                  ),
-                ),
-
+                const Text("Bienvenido", style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: Color(0xFF166088))),
                 const SizedBox(height: 10),
-
-                const Text(
-                  "Inicia sesión para continuar",
-                  style: TextStyle(color: Color(0xFF828282)),
-                ),
-
+                const Text("Inicia sesión para continuar", style: TextStyle(color: Color(0xFF828282))),
                 const SizedBox(height: 30),
 
-                // CAMPO CORREO
                 TextField(
                   controller: correoController,
                   keyboardType: TextInputType.emailAddress,
@@ -135,16 +170,10 @@ class _LoginPageState extends State<LoginPage> {
                     filled: true,
                     fillColor: Colors.white,
                     prefixIcon: const Icon(Icons.email),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(15),
-                      borderSide: BorderSide.none,
-                    ),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(15), borderSide: BorderSide.none),
                   ),
                 ),
-
                 const SizedBox(height: 15),
-
-                // CAMPO CONTRASEÑA
                 TextField(
                   controller: passwordController,
                   obscureText: true,
@@ -153,13 +182,9 @@ class _LoginPageState extends State<LoginPage> {
                     filled: true,
                     fillColor: Colors.white,
                     prefixIcon: const Icon(Icons.lock),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(15),
-                      borderSide: BorderSide.none,
-                    ),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(15), borderSide: BorderSide.none),
                   ),
                 ),
-
                 const SizedBox(height: 25),
 
                 SizedBox(
@@ -168,31 +193,40 @@ class _LoginPageState extends State<LoginPage> {
                   child: ElevatedButton(
                     onPressed: validarLogin,
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFFEB5757),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(15),
-                      ),
+                      backgroundColor: const Color(0xFF166088),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
                     ),
-                    child: const Text(
-                        "Iniciar Sesión",
-                        style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)
-                    ),
+                    child: const Text("Iniciar Sesión", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
                   ),
                 ),
 
                 const SizedBox(height: 15),
+                const Text("O inicia con", style: TextStyle(color: Colors.grey)),
+                const SizedBox(height: 15),
 
-                TextButton(
-                  onPressed: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (context) => const RegisterPage()),
-                    );
-                  },
-                  child: const Text(
-                    "¿No tienes cuenta? Regístrate",
-                    style: TextStyle(color: Color(0xFF4A6FA5)),
+                SizedBox(
+                  width: double.infinity,
+                  height: 50,
+                  child: OutlinedButton.icon(
+                    onPressed: loginConGoogle,
+                    icon: Image.network(
+                      'https://pngimg.com/uploads/google/google_PNG19635.png',
+                      height: 24,
+                      errorBuilder: (context, error, stackTrace) => const Icon(Icons.account_circle),
+                    ),
+                    label: const Text("Continuar con Google", style: TextStyle(color: Colors.black87)),
+                    style: OutlinedButton.styleFrom(
+                      backgroundColor: Colors.white,
+                      side: const BorderSide(color: Colors.grey),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+                    ),
                   ),
+                ),
+
+                const SizedBox(height: 20),
+                TextButton(
+                  onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const RegisterPage())),
+                  child: const Text("¿No tienes cuenta? Regístrate", style: TextStyle(color: Color(0xFF4A6FA5))),
                 ),
               ],
             ),
