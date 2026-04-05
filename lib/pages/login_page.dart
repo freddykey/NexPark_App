@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'home_page.dart';
 import 'register_page.dart';
+import 'forgot_password_page.dart'; // <--- 1. AGREGADO
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -17,8 +18,6 @@ class _LoginPageState extends State<LoginPage> {
   final TextEditingController correoController = TextEditingController();
   final TextEditingController passwordController = TextEditingController();
 
-  // Configuración de Google Sign-In
-  // Usamos el Client ID Web para asegurar compatibilidad con el servidor
   final GoogleSignIn _googleSignIn = GoogleSignIn(
     clientId: '568559107230-guucpilvpiobkunpt41sohm1imrklec1.apps.googleusercontent.com',
     scopes: ['email'],
@@ -34,17 +33,18 @@ class _LoginPageState extends State<LoginPage> {
     );
   }
 
-  // --- FUNCIÓN DE LOGIN CON GOOGLE ---
   Future<void> loginConGoogle() async {
     try {
-      // 1. Iniciar sesión con Google
+      await _googleSignIn.signOut();
       final GoogleSignInAccount? account = await _googleSignIn.signIn();
 
       if (account != null) {
-        print("Google OK: ${account.email}");
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (context) => const Center(child: CircularProgressIndicator()),
+        );
 
-        // 2. URL de tu API en Hostinger
-        // Si HTTPS te sigue dando "Vacío", prueba cambiándolo a http://
         var url = Uri.parse('https://carlossalinas.webpro1213.com/api/login_google.php');
 
         var response = await http.post(url, body: {
@@ -53,46 +53,50 @@ class _LoginPageState extends State<LoginPage> {
           'google_id': account.id,
         }).timeout(const Duration(seconds: 10));
 
-        print("STATUS CODE: ${response.statusCode}");
-        print("BODY RAW:");
-        print(response.body);
+        if (!mounted) return;
+        Navigator.pop(context);
 
-        // 4. Validar respuesta del servidor
         if (response.body.trim().isEmpty) {
-          _mostrarError("El servidor respondió vacío. Revisa el PHP.");
+          _mostrarError("El servidor respondió vacío.");
           return;
         }
 
         try {
           var res = json.decode(response.body);
-
           if (res['status'] == 'success') {
-            // Guardar sesión localmente
             SharedPreferences prefs = await SharedPreferences.getInstance();
             await prefs.setBool('isLoggedIn', true);
-            await prefs.setInt('id_usuario', int.parse(res['user']['id'].toString()));
-            await prefs.setString('nombre_usuario', res['user']['nombre']);
+
+            var u = res['user'];
+            // --- CORRECCIÓN AQUÍ: Captura dinámica del ID ---
+            var idRaw = u['id'] ?? u['id_usuario'];
+            await prefs.setInt('id_usuario', int.parse(idRaw.toString()));
+
+            await prefs.setString('nombre_usuario', u['nombre']);
             await prefs.setString('correo_usuario', account.email);
             await prefs.setString('foto_usuario', account.photoUrl ?? "");
 
-            print("Login Exitoso en NexPark");
+            // --- AGREGADO: Guardar datos extra para persistencia ---
+            await prefs.setString('apellido_paterno', u['apellido_paterno']?.toString() ?? "");
+            await prefs.setString('apellido_materno', u['apellido_materno']?.toString() ?? "");
+            await prefs.setString('telefono_usuario', u['telefono']?.toString() ?? "");
+            await prefs.setString('saldo_usuario', u['saldo']?.toString() ?? "0");
+            await prefs.setString('fecha_registro', u['fecha_registro']?.toString() ?? "");
+
             if (!mounted) return;
             Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const HomePage()));
           } else {
             _mostrarError(res['message'] ?? "Error en el servidor");
           }
         } catch (e) {
-          // Si el servidor manda un error de PHP, aquí lo atrapamos
           _mostrarError("Error de formato: ${response.body}");
         }
       }
     } catch (error) {
-      print("Error en Google Sign-In: $error");
       _mostrarError("Error de conexión con Google: $error");
     }
   }
 
-  // --- FUNCIÓN PARA LOGIN NORMAL ---
   Future<void> validarLogin() async {
     String correo = correoController.text.trim();
     String pass = passwordController.text.trim();
@@ -109,14 +113,14 @@ class _LoginPageState extends State<LoginPage> {
     );
 
     try {
-      var url = Uri.parse('http://carlossalinas.webpro1213.com/api/login.php');
+      var url = Uri.parse('https://carlossalinas.webpro1213.com/api/login.php');
       var response = await http.post(url, body: {
         'correo': correo,
         'password': pass,
       }).timeout(const Duration(seconds: 10));
 
       if (!mounted) return;
-      Navigator.pop(context); // Cerrar cargando
+      Navigator.pop(context);
 
       if (response.body.isEmpty) {
         _mostrarError("Respuesta vacía del servidor.");
@@ -127,9 +131,21 @@ class _LoginPageState extends State<LoginPage> {
       if (res['status'] == 'success') {
         SharedPreferences prefs = await SharedPreferences.getInstance();
         await prefs.setBool('isLoggedIn', true);
-        await prefs.setInt('id_usuario', int.parse(res['user']['id'].toString()));
-        await prefs.setString('nombre_usuario', res['user']['nombre']);
+
+        var u = res['user'];
+        // --- CORRECCIÓN AQUÍ: Captura dinámica del ID ---
+        var idRaw = u['id'] ?? u['id_usuario'];
+        await prefs.setInt('id_usuario', int.parse(idRaw.toString()));
+
+        await prefs.setString('nombre_usuario', u['nombre']);
         await prefs.setString('correo_usuario', correo);
+
+        // --- AGREGADO: Guardar datos extra para persistencia ---
+        await prefs.setString('apellido_paterno', u['apellido_paterno']?.toString() ?? "");
+        await prefs.setString('apellido_materno', u['apellido_materno']?.toString() ?? "");
+        await prefs.setString('telefono_usuario', u['telefono']?.toString() ?? "");
+        await prefs.setString('saldo_usuario', u['saldo']?.toString() ?? "0");
+        await prefs.setString('fecha_registro', u['fecha_registro']?.toString() ?? "");
 
         if (!mounted) return;
         Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const HomePage()));
@@ -153,7 +169,6 @@ class _LoginPageState extends State<LoginPage> {
             padding: const EdgeInsets.all(25.0),
             child: Column(
               children: [
-                // --- AQUÍ ESTÁ TU LOGO DE REGRESO, PERDÓN ---
                 Image.asset('assets/logo.png', height: 150),
                 const Text("Encuentra. Reserva. Aparca.", style: TextStyle(color: Color(0xFF828282))),
                 const SizedBox(height: 40),
@@ -185,7 +200,17 @@ class _LoginPageState extends State<LoginPage> {
                     border: OutlineInputBorder(borderRadius: BorderRadius.circular(15), borderSide: BorderSide.none),
                   ),
                 ),
-                const SizedBox(height: 25),
+
+                // --- 2. BOTÓN AGREGADO AQUÍ ---
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton(
+                    onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ForgotPasswordPage())),
+                    child: const Text("¿Olvidaste tu contraseña?", style: TextStyle(color: Color(0xFF166088), fontWeight: FontWeight.bold)),
+                  ),
+                ),
+
+                const SizedBox(height: 10),
 
                 SizedBox(
                   width: double.infinity,

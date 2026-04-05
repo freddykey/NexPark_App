@@ -20,11 +20,14 @@ class _RegisterPageState extends State<RegisterPage> {
 
   // FUNCION PARA ENVIAR LOS DATOS AL HOSTING
   Future<void> registrarUsuario() async {
-    // VALIDACIÓN
-    if (nombreController.text.isEmpty || correoController.text.isEmpty || paternoController.text.isEmpty ||
-        maternoController.text.isEmpty || passwordController.text.isEmpty || telefonoController.text.isEmpty) {
+    // VALIDACIÓN: Se eliminó la validación del teléfono para que sea opcional
+    if (nombreController.text.isEmpty ||
+        correoController.text.isEmpty ||
+        paternoController.text.isEmpty ||
+        maternoController.text.isEmpty ||
+        passwordController.text.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Por favor rellena todos los campos")),
+        const SnackBar(content: Text("Por favor rellena todos los campos obligatorios")),
       );
       return;
     }
@@ -37,7 +40,6 @@ class _RegisterPageState extends State<RegisterPage> {
     );
 
     try {
-
       var url = Uri.parse('https://carlossalinas.webpro1213.com/api/registrar.php');
 
       var response = await http.post(url, body: {
@@ -45,12 +47,12 @@ class _RegisterPageState extends State<RegisterPage> {
         'paterno': paternoController.text,
         'materno': maternoController.text,
         'correo': correoController.text,
-        'telefono': telefonoController.text,
+        'telefono': telefonoController.text, // Se envía vacío si el usuario no lo llena
         'password': passwordController.text,
       });
 
       if (!mounted) return;
-      Navigator.pop(context); // TERMINA DE CARGAR QUITANDO LA VISUALIZACION PARA EL USUARIO QUE ESTA CARGANDO
+      Navigator.pop(context); // QUITA EL INDICADOR DE CARGA
 
       var res = json.decode(response.body);
 
@@ -126,9 +128,9 @@ class _RegisterPageState extends State<RegisterPage> {
               _buildTextField("Contraseña", Icons.lock, obscure: true, controller: passwordController),
               const SizedBox(height: 15),
 
-              // CAMPO NUMERO DE TELEFONO
+              // CAMPO NUMERO DE TELEFONO (OPCIONAL)
               _buildTextField(
-                "Número de Teléfono",
+                "Número de Teléfono (opcional)",
                 Icons.phone,
                 keyboardType: TextInputType.phone,
                 controller: telefonoController,
@@ -155,7 +157,6 @@ class _RegisterPageState extends State<RegisterPage> {
       ),
     );
   }
-
 
   Widget _buildTextField(String hint, IconData icon, {
     required TextEditingController controller,
