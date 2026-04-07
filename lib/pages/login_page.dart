@@ -68,7 +68,7 @@ class _LoginPageState extends State<LoginPage> {
             await prefs.setBool('isLoggedIn', true);
 
             var u = res['user'];
-            // --- CORRECCIÓN AQUÍ: Captura dinámica del ID ---
+
             var idRaw = u['id'] ?? u['id_usuario'];
             await prefs.setInt('id_usuario', int.parse(idRaw.toString()));
 
@@ -76,7 +76,7 @@ class _LoginPageState extends State<LoginPage> {
             await prefs.setString('correo_usuario', account.email);
             await prefs.setString('foto_usuario', account.photoUrl ?? "");
 
-            // --- AGREGADO: Guardar datos extra para persistencia ---
+
             await prefs.setString('apellido_paterno', u['apellido_paterno']?.toString() ?? "");
             await prefs.setString('apellido_materno', u['apellido_materno']?.toString() ?? "");
             await prefs.setString('telefono_usuario', u['telefono']?.toString() ?? "");
@@ -133,14 +133,14 @@ class _LoginPageState extends State<LoginPage> {
         await prefs.setBool('isLoggedIn', true);
 
         var u = res['user'];
-        // --- CORRECCIÓN AQUÍ: Captura dinámica del ID ---
+
         var idRaw = u['id'] ?? u['id_usuario'];
         await prefs.setInt('id_usuario', int.parse(idRaw.toString()));
 
         await prefs.setString('nombre_usuario', u['nombre']);
         await prefs.setString('correo_usuario', correo);
 
-        // --- AGREGADO: Guardar datos extra para persistencia ---
+
         await prefs.setString('apellido_paterno', u['apellido_paterno']?.toString() ?? "");
         await prefs.setString('apellido_materno', u['apellido_materno']?.toString() ?? "");
         await prefs.setString('telefono_usuario', u['telefono']?.toString() ?? "");
@@ -201,7 +201,7 @@ class _LoginPageState extends State<LoginPage> {
                   ),
                 ),
 
-                // --- 2. BOTÓN AGREGADO AQUÍ ---
+
                 Align(
                   alignment: Alignment.centerRight,
                   child: TextButton(

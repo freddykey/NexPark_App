@@ -10,7 +10,7 @@ class RegisterPage extends StatefulWidget {
 }
 
 class _RegisterPageState extends State<RegisterPage> {
-  // DEFINIR CONTROLADORES PARA CAPTURAR EL TEXTO
+
   final TextEditingController nombreController = TextEditingController();
   final TextEditingController paternoController = TextEditingController();
   final TextEditingController maternoController = TextEditingController();
@@ -18,9 +18,13 @@ class _RegisterPageState extends State<RegisterPage> {
   final TextEditingController passwordController = TextEditingController();
   final TextEditingController telefonoController = TextEditingController();
 
+  bool _esEmailValido(String email) {
+    return RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(email);
+  }
+
   // FUNCION PARA ENVIAR LOS DATOS AL HOSTING
   Future<void> registrarUsuario() async {
-    // VALIDACIÓN: Se eliminó la validación del teléfono para que sea opcional
+
     if (nombreController.text.isEmpty ||
         correoController.text.isEmpty ||
         paternoController.text.isEmpty ||
@@ -28,6 +32,16 @@ class _RegisterPageState extends State<RegisterPage> {
         passwordController.text.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("Por favor rellena todos los campos obligatorios")),
+      );
+      return;
+    }
+    //IF LOCO PARA VALIDAR EL FORMATO DEL CORREO
+    if (!_esEmailValido(correoController.text.trim())) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("El formato de correo no es válido (ejemplo@correo.com)"),
+          backgroundColor: Colors.orange,
+        ),
       );
       return;
     }
@@ -47,12 +61,12 @@ class _RegisterPageState extends State<RegisterPage> {
         'paterno': paternoController.text,
         'materno': maternoController.text,
         'correo': correoController.text,
-        'telefono': telefonoController.text, // Se envía vacío si el usuario no lo llena
+        'telefono': telefonoController.text,
         'password': passwordController.text,
       });
 
       if (!mounted) return;
-      Navigator.pop(context); // QUITA EL INDICADOR DE CARGA
+      Navigator.pop(context);
 
       var res = json.decode(response.body);
 
@@ -60,7 +74,7 @@ class _RegisterPageState extends State<RegisterPage> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text("¡Registro exitoso! Ya puedes iniciar sesión")),
         );
-        Navigator.pop(context); // REGRESA AL LOGIN
+        Navigator.pop(context);
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text("Error: ${res['message']}")),

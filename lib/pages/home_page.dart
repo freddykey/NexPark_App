@@ -4,6 +4,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'login_page.dart';
+import 'recarga_page.dart';
 import 'user_account.dart';
 
 class HomePage extends StatefulWidget {
@@ -72,6 +73,7 @@ class _HomePageState extends State<HomePage> {
             ],
           ),
         ),
+
         drawer: Drawer(
           child: Column(
             children: [
@@ -79,12 +81,9 @@ class _HomePageState extends State<HomePage> {
                 decoration: const BoxDecoration(
                   color: Color(0xFF166088),
                 ),
-
                 currentAccountPicture: CircleAvatar(
                   backgroundColor: Colors.white,
-                  backgroundImage: foto.isNotEmpty
-                      ? NetworkImage(foto)
-                      : null,
+                  backgroundImage: foto.isNotEmpty ? NetworkImage(foto) : null,
                   child: foto.isEmpty
                       ? Text(
                     nombre.isNotEmpty ? nombre[0].toUpperCase() : "U",
@@ -96,50 +95,21 @@ class _HomePageState extends State<HomePage> {
                   )
                       : null,
                 ),
-
                 accountName: Text(
                   nombre,
                   style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
                 ),
                 accountEmail: Text(correo),
               ),
-              Expanded(
-                child: ListView(
-                  padding: EdgeInsets.zero,
-                  children: [
-                    _buildDrawerItem(
-                      icon: Icons.home_rounded,
-                      title: "Inicio",
-                      onTap: () => Navigator.pop(context),
-                    ),
-                    _buildDrawerItem(
-                      icon: Icons.person_rounded,
-                      title: "Mi Cuenta",
-                      onTap: () {
-                        Navigator.pop(context);
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(builder: (_) => const UserAccount()),
-                        );
-                      },
-                    ),
-                    const Divider(indent: 20, endIndent: 20),
-                    _buildDrawerItem(
-                      icon: Icons.logout_rounded,
-                      title: "Cerrar sesión",
-                      isSelected: true,
-                      onTap: _logout,
-                    ),
-                  ],
-                ),
-              ),
-              const Padding(
-                padding: EdgeInsets.all(20.0),
-                child: Text(
-                  "NexPark v1.0.2",
-                  style: TextStyle(color: Colors.grey, fontSize: 12),
-                ),
-              ),
+
+              ListTile(leading: const Icon(Icons.home_rounded, color: Color(0xFF166088)), title: const Text("Inicio"), onTap: () => Navigator.pop(context),),
+              ListTile(leading: const Icon(Icons.person_rounded, color: Color(0xFF166088)), title: const Text("Mi Cuenta"), onTap: () {Navigator.pop(context);Navigator.push(context, MaterialPageRoute(builder: (_) => const UserAccount()),);},),
+              ListTile(leading: const Icon(Icons.add_card, color: Color(0xFF166088)), title: const Text("Recargar Saldo"), onTap: () {Navigator.pop(context);Navigator.push(context, MaterialPageRoute(builder: (_) => const RecargaPage()),);},),
+              const Spacer(),
+              const Divider(indent: 20, endIndent: 20),
+              ListTile(leading: const Icon(Icons.logout_rounded, color: Color(0xFFEB5757)), title: const Text("Cerrar sesión", style: TextStyle(color: Color(0xFFEB5757), fontWeight: FontWeight.bold),), onTap: _logout,),
+              const Padding(padding: EdgeInsets.all(20.0), child: Text("NexPark v1.0.2", style: TextStyle(color: Colors.grey, fontSize: 12),),),
+              const SizedBox(height: 10),
             ],
           ),
         ),

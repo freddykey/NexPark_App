@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'login_page.dart';
 import 'home_page.dart';
+import 'recarga_page.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:image_picker/image_picker.dart';
@@ -21,7 +22,7 @@ class _UserAccountState extends State<UserAccount> {
   String apellidoM = "";
   String telefono = "";
   String saldo = "0";
-  String fecha = "--/--/----"; // Formato por defecto
+  String fecha = "--/--/----";
   String vehiculos = "0";
   int idUsuario = 0;
 
@@ -31,7 +32,7 @@ class _UserAccountState extends State<UserAccount> {
     _inicializarDatos();
   }
 
-  // --- 1. CARGA DESDE PREFERENCIAS (INMEDIATO) ---
+
   Future<void> _inicializarDatos() async {
     final prefs = await SharedPreferences.getInstance();
 
@@ -42,7 +43,7 @@ class _UserAccountState extends State<UserAccount> {
         correo = prefs.getString('correo_usuario') ?? "usuario@correo.com";
         foto = prefs.getString('foto_usuario') ?? "";
 
-        // Datos adicionales guardados previamente
+
         apellidoP = prefs.getString('apellido_paterno') ?? "";
         apellidoM = prefs.getString('apellido_materno') ?? "";
         telefono = prefs.getString('telefono_usuario') ?? "";
@@ -56,10 +57,10 @@ class _UserAccountState extends State<UserAccount> {
     }
   }
 
-  // --- 2. CARGA DESDE SERVIDOR (ACTUALIZACIÓN) ---
+
   Future<void> _cargarDatosServidor() async {
     try {
-      // Nota: Cambié a HTTPS para evitar el error anterior
+
       var url = Uri.parse('https://carlossalinas.webpro1213.com/api/get_user_data.php');
       var response = await http.post(url, body: {
         'id_usuario': idUsuario.toString(),
@@ -83,13 +84,13 @@ class _UserAccountState extends State<UserAccount> {
           }
         }
 
-        // --- GUARDADO EN PREFERENCIAS ---
+
         await prefs.setString('apellido_paterno', _limpiarNulo(userData['apellido_paterno']));
         await prefs.setString('apellido_materno', _limpiarNulo(userData['apellido_materno']));
         await prefs.setString('telefono_usuario', _limpiarNulo(userData['telefono']));
         await prefs.setString('saldo_usuario', userData['saldo']?.toString() ?? "0");
 
-        // AQUÍ: Usa 'fecha_registro' en lugar de 'fecha_formateada' para que coincida con _inicializarDatos
+
         await prefs.setString('fecha_registro', fechaNueva);
 
         if (mounted) {
@@ -101,7 +102,7 @@ class _UserAccountState extends State<UserAccount> {
             saldo = userData['saldo']?.toString() ?? "0";
             vehiculos = res['vehiculos']?.toString() ?? "0";
 
-            // --- CAMBIO AQUÍ: Actualizar variable y guardarla ---
+
             String fotoServidor = userData['foto']?.toString() ?? "";
             if (fotoServidor.isNotEmpty) {
               foto = fotoServidor;
@@ -129,7 +130,7 @@ class _UserAccountState extends State<UserAccount> {
     return valor;
   }
 
-  // --- MÉTODOS DE ACCIÓN ---
+
   Future<void> _logout() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.clear();
@@ -141,7 +142,7 @@ class _UserAccountState extends State<UserAccount> {
     final picker = ImagePicker();
     final XFile? image = await picker.pickImage(
         source: ImageSource.gallery,
-        imageQuality: 50 // Comprimimos para evitar errores de timeout
+        imageQuality: 50
     );
 
     if (image != null) {
@@ -157,24 +158,24 @@ class _UserAccountState extends State<UserAccount> {
             Uri.parse('https://carlossalinas.webpro1213.com/api/actualizar_foto.php')
         );
 
-        // Usamos id_usuario tal como lo definiste en tu base de datos
+
         request.fields['id_usuario'] = idUsuario.toString();
 
-        // Enviamos el archivo con la clave 'foto'
+
         request.files.add(await http.MultipartFile.fromPath('foto', image.path));
 
         var streamedResponse = await request.send();
         var response = await http.Response.fromStream(streamedResponse);
 
         if (!mounted) return;
-        Navigator.pop(context); // Quitar carga
+        Navigator.pop(context);
 
         var res = json.decode(response.body);
 
         if (res['status'] == 'success') {
           String nuevaUrl = res['url'];
 
-          // Guardar localmente para persistencia
+
           final prefs = await SharedPreferences.getInstance();
           await prefs.setString('foto_usuario', nuevaUrl);
 
@@ -223,7 +224,7 @@ class _UserAccountState extends State<UserAccount> {
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF166088), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
             onPressed: () async {
-              // 1. Mostrar indicador de carga
+
               showDialog(
                 context: context,
                 barrierDismissible: false,
@@ -243,14 +244,14 @@ class _UserAccountState extends State<UserAccount> {
                 var res = json.decode(response.body);
 
                 if (res['status'] == 'success') {
-                  // 2. ACTUALIZAR SHARED PREFERENCES
+
                   final prefs = await SharedPreferences.getInstance();
                   await prefs.setString('nombre_usuario', nombreCtrl.text.trim());
                   await prefs.setString('apellido_paterno', apCtrl.text.trim());
                   await prefs.setString('apellido_materno', amCtrl.text.trim());
                   await prefs.setString('telefono_usuario', telCtrl.text.trim());
 
-                  // 3. Refrescar la UI localmente
+
                   if (mounted) {
                     setState(() {
                       nombre = nombreCtrl.text.trim();
@@ -261,8 +262,8 @@ class _UserAccountState extends State<UserAccount> {
                   }
 
                   if (!mounted) return;
-                  Navigator.pop(context); // Cierra loading
-                  Navigator.pop(context); // Cierra Dialog de edición
+                  Navigator.pop(context);
+                  Navigator.pop(context);
 
                   ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(content: Text("Datos actualizados correctamente"), backgroundColor: Colors.green)
@@ -285,34 +286,65 @@ class _UserAccountState extends State<UserAccount> {
     );
   }
 
-// Función auxiliar para mostrar errores rápidos
+
   void _mostrarError(String msg) {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg), backgroundColor: Colors.red));
   }
 
-  void _cambiarPassword() {
+  void _cambiarPassword() async {
     final passCtrl = TextEditingController();
+    final prefs = await SharedPreferences.getInstance();
+
+    int idReal = prefs.getInt('id_usuario') ?? 0;
+
+    if (idReal == 0) {
+      _mostrarError("Error: No se encontró tu sesión. Reingresa a la app.");
+      return;
+    }
+
     showDialog(
       context: context,
-      builder: (_) => AlertDialog(
-        title: const Text("Cambiar contraseña"),
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text("Nueva Contraseña"),
         content: TextField(
           controller: passCtrl,
           obscureText: true,
-          decoration: const InputDecoration(labelText: "Nueva contraseña"),
+          decoration: const InputDecoration(labelText: "Nueva clave", prefixIcon: Icon(Icons.lock)),
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context), child: const Text("Cancelar")),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
             onPressed: () async {
-              Navigator.pop(context);
-              var url = Uri.parse('https://carlossalinas.webpro1213.com/api/update_password.php');
-              await http.post(url, body: {
-                'id_usuario': idUsuario.toString(),
-                'password': passCtrl.text,
-              });
-              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Contraseña actualizada")));
+              if (passCtrl.text.trim().isEmpty) return;
+
+              showDialog(context: context, builder: (_) => const Center(child: CircularProgressIndicator()));
+
+              try {
+                var response = await http.post(
+                  Uri.parse('https://carlossalinas.webpro1213.com/api/actualizar_password.php'),
+                  body: {
+                    'id_usuario': idReal.toString(),
+                    'password': passCtrl.text.trim(),
+                  },
+                );
+
+                var res = json.decode(response.body);
+                Navigator.pop(context);
+
+                if (res['status'] == 'success') {
+                  Navigator.pop(context);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text("¡Contraseña Actualizada!."), backgroundColor: Colors.green)
+                  );
+                } else {
+                  _mostrarError(res['message']);
+                }
+              } catch (e) {
+                Navigator.pop(context);
+                _mostrarError("Error de conexión");
+              }
             },
             child: const Text("Guardar", style: TextStyle(color: Colors.white)),
           ),
@@ -321,7 +353,7 @@ class _UserAccountState extends State<UserAccount> {
     );
   }
 
-  // --- DISEÑO ---
+  // DISEÑO
   @override
   Widget build(BuildContext context) {
     String fullApellidos = "${_validar(apellidoP)} ${_validar(apellidoM)}".replaceAll("-- --", "").trim();
@@ -350,8 +382,13 @@ class _UserAccountState extends State<UserAccount> {
             ),
             ListTile(leading: const Icon(Icons.home, color: Color(0xFF166088)), title: const Text("Inicio"), onTap: () => Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const HomePage()))),
             ListTile(leading: const Icon(Icons.person, color: Color(0xFF166088)), title: const Text("Cuenta"), onTap: () => Navigator.pop(context)),
-            const Divider(),
-            ListTile(leading: const Icon(Icons.logout, color: Colors.red), title: const Text("Cerrar sesión", style: TextStyle(color: Colors.red)), onTap: _logout),
+            ListTile(leading: const Icon(Icons.add_card, color: Color(0xFF166088)), title: const Text("Recargar Saldo"), onTap: () {Navigator.pop(context);Navigator.push(context, MaterialPageRoute(builder: (context) => const RecargaPage()),);},),
+            const Spacer(),
+            const Divider(indent: 20, endIndent: 20),
+            ListTile(leading: const Icon(Icons.logout_rounded, color: Color(0xFFEB5757)), title: const Text("Cerrar sesión", style: TextStyle(color: Color(0xFFEB5757), fontWeight: FontWeight.bold),), onTap: _logout,),
+
+            const Padding(padding: EdgeInsets.all(20.0), child: Text("NexPark v1.0.2", style: TextStyle(color: Colors.grey, fontSize: 12),),),
+            const SizedBox(height: 10),
           ],
         ),
       ),
