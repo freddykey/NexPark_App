@@ -73,12 +73,12 @@ class _RecargaPageState extends State<RecargaPage> {
         body: {
           'id_usuario': idUsuario.toString(),
           'monto': montoController.text,
+          'tipo_flujo': 'recarga', // <--- ESTA LÍNEA ES LA CLAVE
         },
       );
 
       var res = json.decode(response.body);
       if (res['status'] == 'success') {
-        // --- CAMBIO AQUÍ: En lugar de salir de la app, abrimos nuestra pantalla interna ---
         if (!mounted) return;
 
         final resultado = await Navigator.push(
@@ -88,7 +88,6 @@ class _RecargaPageState extends State<RecargaPage> {
           ),
         );
 
-        // Si regresamos de la pantalla y fue exitoso, avisamos al usuario
         if (resultado == "success") {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text("¡Recarga procesada! Tu saldo se actualizará en breve."), backgroundColor: Colors.green),
@@ -136,7 +135,7 @@ class _RecargaPageState extends State<RecargaPage> {
             const Divider(indent: 20, endIndent: 20),
             ListTile(leading: const Icon(Icons.logout_rounded, color: Color(0xFFEB5757)), title: const Text("Cerrar sesión", style: TextStyle(color: Color(0xFFEB5757), fontWeight: FontWeight.bold),), onTap: _logout,),
 
-            const Padding(padding: EdgeInsets.all(20.0), child: Text("NexPark v1.0.2", style: TextStyle(color: Colors.grey, fontSize: 12),),),
+            const Padding(padding: EdgeInsets.all(20.0), child: Text("NexPark alpha-v0.4.2", style: TextStyle(color: Colors.grey, fontSize: 12),),),
             const SizedBox(height: 10),
           ],
         ),
@@ -176,7 +175,7 @@ class _RecargaPageState extends State<RecargaPage> {
               child: ElevatedButton(
                 onPressed: cargando ? null : iniciarPago,
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF27AE60), // Verde para pagos
+                  backgroundColor: const Color(0xFF27AE60),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
                 ),
                 child: cargando

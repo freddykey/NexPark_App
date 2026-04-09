@@ -387,7 +387,7 @@ class _UserAccountState extends State<UserAccount> {
             const Divider(indent: 20, endIndent: 20),
             ListTile(leading: const Icon(Icons.logout_rounded, color: Color(0xFFEB5757)), title: const Text("Cerrar sesión", style: TextStyle(color: Color(0xFFEB5757), fontWeight: FontWeight.bold),), onTap: _logout,),
 
-            const Padding(padding: EdgeInsets.all(20.0), child: Text("NexPark v1.0.2", style: TextStyle(color: Colors.grey, fontSize: 12),),),
+            const Padding(padding: EdgeInsets.all(20.0), child: Text("NexPark alpha-v0.4.2", style: TextStyle(color: Colors.grey, fontSize: 12),),),
             const SizedBox(height: 10),
           ],
         ),
