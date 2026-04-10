@@ -711,11 +711,11 @@ class _ParkingSlotItemState extends State<ParkingSlotItem> {
 
     // LÓGICA DE COLOR DINÁMICO
     Color colorCajon;
-    if (ocupado) { // ocupado es true si el estado en la DB es 'ocupado'
+    if (ocupado) {
       if (tiempoRestante > 0) {
-        colorCajon = Colors.red.shade400; // DEBERÍA SER ROJO
+        colorCajon = Colors.red.shade400;
       } else {
-        colorCajon = Colors.orange.shade400; // AMARILLO
+        colorCajon = Colors.orange.shade400;
       }
     } else {
       // Si no está ocupado -> VERDE o AZUL
