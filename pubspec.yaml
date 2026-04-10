@@ -46,7 +46,7 @@ dependencies:
   device_info_plus: ^10.1.0
   url_launcher: ^6.3.2
   webview_flutter: ^4.13.1
-
+  qr_flutter: ^4.1.0
 
 dev_dependencies:
   flutter_test:
