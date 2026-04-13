@@ -74,6 +74,7 @@ class _RecargaPageState extends State<RecargaPage> {
           'id_usuario': idUsuario.toString(),
           'monto': montoController.text,
           'tipo_flujo': 'recarga', // <--- ESTA LÍNEA ES LA CLAVE
+
         },
       );
 

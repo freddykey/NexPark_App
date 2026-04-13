@@ -36,23 +36,24 @@ class Estacionamiento {
       nombre: json['nombre']?.toString() ?? "Sin nombre",
       totalCajones: int.tryParse(json['totalCajones']?.toString() ?? json['total_cajones']?.toString() ?? '0') ?? 0,
       niveles: int.tryParse(json['niveles']?.toString() ?? '1') ?? 1,
-      precioHora: double.tryParse(json['precio_hora']?.toString() ?? '10.0') ?? 10.0,
+      precioHora: double.tryParse(json['precio_hora']?.toString() ?? '0.0') ?? 0.0,
     );
   }
 }
 
-class Vehiculo {
-  final int id;
-  final String placa;
-  final String modelo;
+// MODELO ACTUALIZADO PARA SOPORTAR MÚLTIPLES RESERVAS Y NOMBRES
+class ReservaActiva {
+  final String nombre;
+  final String token;
+  final String espacio;
 
-  Vehiculo({required this.id, required this.placa, required this.modelo});
+  ReservaActiva({required this.nombre, required this.token, required this.espacio});
 
-  factory Vehiculo.fromJson(Map<String, dynamic> json) {
-    return Vehiculo(
-      id: int.tryParse(json['id_vehiculo']?.toString() ?? '0') ?? 0,
-      placa: json['placa']?.toString() ?? "---",
-      modelo: json['modelo']?.toString() ?? "Auto",
+  factory ReservaActiva.fromJson(Map<String, dynamic> json) {
+    return ReservaActiva(
+      nombre: json['nombre_reserva'] ?? "Mi Reserva",
+      token: json['token_qr'] ?? "",
+      espacio: json['id_espacio']?.toString() ?? json['numero_espacio']?.toString() ?? "N/A",
     );
   }
 }
@@ -115,7 +116,9 @@ class _HomePageState extends State<HomePage> {
   List<Estacionamiento> misEstacionamientos = [];
   bool cargando = true;
   bool cambiandoSucursal = false;
-  String? tokenQRActual;
+
+  // CAMBIO: Ahora usamos una lista en lugar de un solo token
+  List<ReservaActiva> misReservas = [];
 
   @override
   void initState() {
@@ -144,7 +147,7 @@ class _HomePageState extends State<HomePage> {
     });
 
     if (idUsuario != 0) _cargarDatosUsuarioServidor();
-    _obtenerTokenQR();
+    _obtenerReservas(); // Cambio de nombre de función
     await _obtenerEstacionamientosReal();
 
     int? idGuardado = prefs.getInt('estacionamiento_id');
@@ -165,26 +168,40 @@ class _HomePageState extends State<HomePage> {
     try {
       final response = await http.get(Uri.parse(
           "https://carlossalinas.webpro1213.com/api/get_espacios.php?id_estacionamiento=${seleccionado!.id}"));
+
       if (response.statusCode == 200) {
         final List<dynamic> data = json.decode(response.body);
         setState(() {
           for (var item in data) {
             int numEspacio = int.tryParse(item['numero_espacio'].toString()) ?? 0;
             int index = numEspacio - 1;
+
             if (index >= 0 && index < seleccionado!.totalCajones) {
               ParkingState.esDiscapacitado[index] = (item['es_discapacitado'].toString() == "1");
-              bool estaOcupado = (item['estado'].toString() != 'libre');
+
+              String estadoBD = item['estado'].toString(); // 'libre', 'reservado', 'ocupado'
+
+              // 1. Determinar si está apartado o ya ocupado físicamente
+              bool estaOcupado = (estadoBD != 'libre');
               ParkingState.ocupados[index] = estaOcupado;
 
-              if (estaOcupado && item['fecha_fin'] != null) {
+              // 2. Lógica del cronómetro (Solo si ya es 'ocupado')
+              if (estadoBD == 'ocupado' && item['fecha_fin'] != null) {
                 DateTime horaFin = DateTime.parse(item['fecha_fin'].toString());
                 int restantes = horaFin.difference(DateTime.now()).inSeconds;
+
                 if (restantes > 0) {
                   ParkingState.tiempos[index] = restantes;
                   if (ParkingState.timers[index] == null || !ParkingState.timers[index]!.isActive) {
                     _reanimarTimerCajon(index);
                   }
+                } else {
+                  ParkingState.tiempos[index] = 0;
                 }
+              } else {
+                // Si es 'reservado' (naranja), el tiempo se queda en 0 para la lógica visual
+                ParkingState.tiempos[index] = 0;
+                ParkingState.timers[index]?.cancel();
               }
             }
           }
@@ -210,46 +227,30 @@ class _HomePageState extends State<HomePage> {
     });
   }
 
-  Future<void> _simularEntradaQR() async {
-    if (tokenQRActual == null) return;
-
+  // FUNCIÓN MEJORADA: Ahora recibe el token específico del QR que quieres simular
+  Future<void> _simularEntradaQR(String token) async {
     try {
       final response = await http.post(
         Uri.parse('https://carlossalinas.webpro1213.com/api/validar_entrada.php'),
-        body: {'token_qr': tokenQRActual},
+        body: {'token_qr': token},
       );
 
-      print("Status Code: ${response.statusCode}");
-      print("Cuerpo crudo: '${response.body}'"); // Fíjate si esto sale vacío en la consola
-
-      if (response.body.isEmpty) {
-        print("EL SERVIDOR DEVOLVIÓ UN TEXTO VACÍO");
-        return;
+      if (response.body.isNotEmpty) {
+        final res = json.decode(response.body);
+        if (res['status'] == 'success') {
+          await _actualizarEstadoDesdeServidor();
+          _obtenerReservas(); // Refrescar lista de QRs
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text("¡Entrada exitosa!"), backgroundColor: Colors.green),
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text("Error: ${res['message']}"), backgroundColor: Colors.orange),
+          );
+        }
       }
-
-      final res = json.decode(response.body);
-      // ... resto del código ...
-
-      if (res['status'] == 'success') {
-        // Si entra aquí, el botón SI sirve y el PHP respondió bien
-        await _actualizarEstadoDesdeServidor();
-        setState(() { tokenQRActual = null; });
-
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("¡Entrada exitosa!"), backgroundColor: Colors.green),
-        );
-      } else {
-        // Aquí verás el error que te manda el PHP (ej: "No se encontró reserva")
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("Servidor dice: ${res['message']}"), backgroundColor: Colors.orange),
-        );
-      }
-    } catch (e) {
-      print("Error de red o código: $e");
-    }
+    } catch (e) { print("Error: $e"); }
   }
-
-
 
   Future<void> _cargarDatosUsuarioServidor() async {
     try {
@@ -271,14 +272,22 @@ class _HomePageState extends State<HomePage> {
     } catch (e) { debugPrint(e.toString()); }
   }
 
-  Future<void> _obtenerTokenQR() async {
+  // FUNCIÓN MEJORADA PARA OBTENER LA LISTA DE RESERVAS
+  Future<void> _obtenerReservas() async {
     try {
       final response = await http.post(
         Uri.parse('https://carlossalinas.webpro1213.com/api/get_reserva_activa.php'),
         body: {'id_usuario': idUsuario.toString()},
       );
       final res = json.decode(response.body);
-      setState(() => tokenQRActual = (res['status'] == 'success') ? res['token_qr'] : null);
+      if (res['status'] == 'success') {
+        var listaJson = res['reservas'] as List;
+        setState(() {
+          misReservas = listaJson.map((r) => ReservaActiva.fromJson(r)).toList();
+        });
+      } else {
+        setState(() => misReservas = []);
+      }
     } catch (e) { debugPrint(e.toString()); }
   }
 
@@ -310,7 +319,7 @@ class _HomePageState extends State<HomePage> {
             ...misEstacionamientos.map((est) => ListTile(
               leading: const Icon(Icons.business, color: Color(0xFF166088)),
               title: Text(est.nombre),
-              subtitle: Text("${est.totalCajones} cajones • \$${est.precioHora}/hr"),
+              subtitle: Text("${est.totalCajones} cajones • \$${est.precioHora}/hr + \$5 de reserva"),
               onTap: () async {
                 final prefs = await SharedPreferences.getInstance();
                 await prefs.setInt('estacionamiento_id', est.id);
@@ -367,8 +376,7 @@ class _HomePageState extends State<HomePage> {
                     children: [
                       _buildParkingGrid(),
                       const Center(child: Text("Vista de Mapa en desarrollo")),
-                      _buildQRView(),
-
+                      _buildQRView(), // ESTA ES LA VISTA QUE CAMBIÓ
                     ],
                   ),
                 ),
@@ -429,7 +437,7 @@ class _HomePageState extends State<HomePage> {
           ),
           const Padding(
             padding: EdgeInsets.all(20.0),
-            child: Text("NexPark Alpha-v0.4.5", style: TextStyle(color: Colors.grey, fontSize: 12)),
+            child: Text("NexPark Alpha-v0.5.0", style: TextStyle(color: Colors.grey, fontSize: 12)),
           ),
           const SizedBox(height: 10),
         ],
@@ -485,8 +493,9 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+  // VISTA DE QR MEJORADA: LISTA DESLIZABLE DE TARJETAS
   Widget _buildQRView() {
-    if (tokenQRActual == null) {
+    if (misReservas.isEmpty) {
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -494,49 +503,43 @@ class _HomePageState extends State<HomePage> {
             const Icon(Icons.qr_code_scanner, size: 80, color: Colors.grey),
             const SizedBox(height: 10),
             const Text("No tienes reservas activas", style: TextStyle(color: Colors.grey)),
-            ElevatedButton(onPressed: _obtenerTokenQR, child: const Text("Actualizar")),
-
+            ElevatedButton(onPressed: _obtenerReservas, child: const Text("Actualizar")),
           ],
         ),
       );
     }
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          const Text("Tu Pase QR", style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Color(0xFF166088))),
-          const SizedBox(height: 20),
-          QrImageView(data: tokenQRActual!, size: 250, foregroundColor: const Color(0xFF166088)),
-          const Padding(
-            padding: EdgeInsets.all(20),
-            child: Text("Escanea este código al llegar.", textAlign: TextAlign.center),
-
-
-          ),
-          const SizedBox(height: 10),
-
-          // --- BOTÓN DE SIMULACIÓN AQUÍ ---
-          ElevatedButton.icon(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.orange,
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+    return ListView.builder(
+      padding: const EdgeInsets.all(20),
+      itemCount: misReservas.length,
+      itemBuilder: (context, index) {
+        final r = misReservas[index];
+        return Card(
+          elevation: 4,
+          margin: const EdgeInsets.only(bottom: 20),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+          child: Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Column(
+              children: [
+                Text(r.nombre, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF166088))),
+                Text("Espacio: C${r.espacio}", style: const TextStyle(color: Colors.grey)),
+                const SizedBox(height: 15),
+                QrImageView(data: r.token, size: 200, foregroundColor: const Color(0xFF166088)),
+                const SizedBox(height: 15),
+                ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(backgroundColor: Colors.orange, foregroundColor: Colors.white),
+                  onPressed: () => _simularEntradaQR(r.token),
+                  icon: const Icon(Icons.check_circle),
+                  label: const Text("SIMULAR ENTRADA"),
+                ),
+              ],
             ),
-            icon: const Icon(Icons.check_circle),
-            label: const Text("SIMULAR ENTRADA (Check-in)"),
-            onPressed: () => _simularEntradaQR(),
           ),
-          const SizedBox(height: 30),
-        ],
-      ),
+        );
+      },
     );
   }
 }
-
-
-
-
-
 
 // --- ITEM DEL CAJÓN ---
 
@@ -578,13 +581,14 @@ class _ParkingSlotItemState extends State<ParkingSlotItem> {
     final homeState = context.findAncestorStateOfType<_HomePageState>();
     final est = homeState!.seleccionado!;
 
-    // Validación de espacio azul (del código 1)
+    final TextEditingController nombreController = TextEditingController(text: "Reserva C${index + 1}");
+
     if (ParkingState.esDiscapacitado[index]) {
       bool? continuar = await showDialog<bool>(
         context: context,
         builder: (context) => AlertDialog(
           title: const Text("Espacio Azul"),
-          content: const Text("Este espacio es para uso exclusivo de personas con discapacidad. ¿Deseas continuar?"),
+          content: const Text("Este espacio es exclusivo para personas con discapacidad. ¿Continuar?"),
           actions: [
             TextButton(onPressed: () => Navigator.pop(context, false), child: const Text("NO")),
             ElevatedButton(onPressed: () => Navigator.pop(context, true), child: const Text("SÍ")),
@@ -609,14 +613,18 @@ class _ParkingSlotItemState extends State<ParkingSlotItem> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
+                  // CAMBIO: Agregamos el campo de nombre aquí
+                  TextField(
+                    controller: nombreController,
+                    decoration: const InputDecoration(labelText: "Nombre para tu reserva", prefixIcon: Icon(Icons.edit)),
+                  ),
+                  const SizedBox(height: 10),
                   ListTile(
                     leading: const Icon(Icons.access_time, color: Color(0xFF166088)),
                     title: Text(llegadaProgramada),
-                    subtitle: const Text("Hora estimada de llegada"),
                     onTap: () => _seleccionarHoraLlegada(context, setDialogState),
                   ),
                   const Divider(),
-                  const Text("Horas de estancia:"),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
@@ -625,20 +633,7 @@ class _ParkingSlotItemState extends State<ParkingSlotItem> {
                       IconButton(icon: const Icon(Icons.add_circle), onPressed: () => setDialogState(() => horas++)),
                     ],
                   ),
-                  const Divider(),
-                  RadioListTile(
-                    title: const Text("Saldo NexPark"),
-                    subtitle: Text("Disponible: \$${homeState.saldo}",
-                      style: TextStyle(
-                          color: double.parse(homeState.saldo) >= total ? Colors.grey : Colors.red,
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold
-                      ),
-                    ),
-                    value: "Saldo",
-                    groupValue: metodo,
-                    onChanged: (v) => setDialogState(() => metodo = v!),
-                  ),
+                  RadioListTile(title: const Text("Saldo NexPark"), value: "Saldo", groupValue: metodo, onChanged: (v) => setDialogState(() => metodo = v!)),
                   RadioListTile(title: const Text("Mercado Pago"), value: "Mercado Pago", groupValue: metodo, onChanged: (v) => setDialogState(() => metodo = v!)),
                   Text("Total: \$${total.toStringAsFixed(2)}", style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.green)),
                 ],
@@ -653,7 +648,7 @@ class _ParkingSlotItemState extends State<ParkingSlotItem> {
                     return;
                   }
                   Navigator.pop(context);
-                  _procesarPago(index, est, horas, total, metodo);
+                  _procesarPago(index, est, horas, total, metodo, nombreController.text);
                 },
                 child: const Text("Confirmar Pago"),
               )
@@ -664,10 +659,9 @@ class _ParkingSlotItemState extends State<ParkingSlotItem> {
     );
   }
 
-  void _procesarPago(int index, Estacionamiento est, int horas, double monto, String metodo) async {
+  void _procesarPago(int index, Estacionamiento est, int horas, double monto, String metodo, String nombreR) async {
     final homeState = context.findAncestorStateOfType<_HomePageState>();
     try {
-      // Separación de lógica según el método (del código 2)
       final url = (metodo == "Saldo")
           ? 'https://carlossalinas.webpro1213.com/api/crear_reserva.php'
           : 'https://carlossalinas.webpro1213.com/api/crear_preferencia.php';
@@ -682,6 +676,7 @@ class _ParkingSlotItemState extends State<ParkingSlotItem> {
           'hora_llegada_estimada': llegadaProgramada.trim(),
           'metodo': metodo,
           'horas': horas.toString(),
+          'nombre_reserva': nombreR,
         },
       );
 
@@ -690,17 +685,17 @@ class _ParkingSlotItemState extends State<ParkingSlotItem> {
         if (metodo == "Saldo") {
           setState(() => ParkingState.ocupados[index] = true);
           homeState._cargarDatosUsuarioServidor();
-          homeState._obtenerTokenQR();
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("¡Reserva confirmada con saldo!")));
+          homeState._obtenerReservas();
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("¡Reserva confirmada!")));
         } else {
           final result = await Navigator.push(context, MaterialPageRoute(builder: (_) => PagoWebView(url: res['url_pago'])));
           if (result == "success") {
             homeState._cargarDatosUsuarioServidor();
-            homeState._obtenerTokenQR();
+            homeState._obtenerReservas();
           }
         }
       }
-    } catch (e) { debugPrint("Error de Pago: $e"); }
+    } catch (e) { debugPrint("Error: $e"); }
   }
 
   @override
@@ -709,17 +704,21 @@ class _ParkingSlotItemState extends State<ParkingSlotItem> {
     bool esDis = ParkingState.esDiscapacitado[widget.index];
     int tiempoRestante = ParkingState.tiempos[widget.index];
 
-    // LÓGICA DE COLOR DINÁMICO
+    // LÓGICA DE COLORES:
     Color colorCajon;
-    if (ocupado) {
+
+    if (!ocupado) {
+      // ESTADO: LIBRE
+      colorCajon = esDis ? Colors.blue.shade600 : Colors.green.shade400;
+    } else {
+      // ESTADO: RESERVADO U OCUPADO
       if (tiempoRestante > 0) {
+        // ROJO: Ya escaneó el QR y el tiempo está corriendo
         colorCajon = Colors.red.shade400;
       } else {
+        // NARANJA: Está apartado en la BD pero aún no llega (tiempo = 0)
         colorCajon = Colors.orange.shade400;
       }
-    } else {
-      // Si no está ocupado -> VERDE o AZUL
-      colorCajon = esDis ? Colors.blue.shade600 : Colors.green.shade400;
     }
 
     return GestureDetector(
@@ -727,30 +726,26 @@ class _ParkingSlotItemState extends State<ParkingSlotItem> {
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 300),
         decoration: BoxDecoration(
-          color: colorCajon,
-          borderRadius: BorderRadius.circular(15),
-          boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 4)],
+            color: colorCajon,
+            borderRadius: BorderRadius.circular(15),
+            border: Border.all(color: Colors.black12)
         ),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Icon(
-                ocupado && tiempoRestante == 0 ? Icons.event_available : (esDis ? Icons.accessible : Icons.local_parking),
+                ocupado && tiempoRestante > 0 ? Icons.timer : (esDis ? Icons.accessible : Icons.local_parking),
                 color: Colors.white,
                 size: 35
             ),
-            Text("C${widget.index + 1}", style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18)),
-
-            // LÓGICA DE TEXTO DEBAJO DEL ICONO
+            Text(
+                "C${widget.index + 1}",
+                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18)
+            ),
             if (ocupado)
-              Padding(
-                padding: const EdgeInsets.only(top: 4.0),
-                child: Text(
-                  tiempoRestante > 0
-                      ? ParkingState.formatearTiempo(tiempoRestante)
-                      : "RESERVADO", // Cambiamos el 00:00:00 por un texto claro
-                  style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
-                ),
+              Text(
+                  tiempoRestante > 0 ? ParkingState.formatearTiempo(tiempoRestante) : "RESERVADO",
+                  style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold)
               ),
           ],
         ),
