@@ -66,6 +66,7 @@ class ParkingState {
   static List<bool> esDiscapacitado = [];
   static List<Timer?> timers = [];
   static final FlutterLocalNotificationsPlugin notifications = FlutterLocalNotificationsPlugin();
+  static List<int> idsReales = [];
 
   static void prepararCajones(int cantidad) {
     if (ocupados.length != cantidad) {
@@ -171,27 +172,41 @@ class _HomePageState extends State<HomePage> {
 
       if (response.statusCode == 200) {
         final List<dynamic> data = json.decode(response.body);
+
+        // 1. Aseguramos que la lista de IDs reales tenga el tamaño de la sucursal actual
+        if (ParkingState.idsReales.length != seleccionado!.totalCajones) {
+          ParkingState.idsReales = List.filled(seleccionado!.totalCajones, 0);
+        }
+
         setState(() {
           for (var item in data) {
+            // Usamos el numero_espacio para saber qué posición del Grid ocupar (ej: "1" -> index 0)
             int numEspacio = int.tryParse(item['numero_espacio'].toString()) ?? 0;
             int index = numEspacio - 1;
 
             if (index >= 0 && index < seleccionado!.totalCajones) {
+
+              // 2. GUARDAMOS EL ID REAL DE LA DB (Vital para crear_reserva.php)
+              ParkingState.idsReales[index] = int.parse(item['id_espacio'].toString());
+
+              // 3. Cargamos preferencias de accesibilidad
               ParkingState.esDiscapacitado[index] = (item['es_discapacitado'].toString() == "1");
 
-              String estadoBD = item['estado'].toString(); // 'libre', 'reservado', 'ocupado'
+              // 4. Lógica de estados según el nuevo get_espacios.php
+              String estadoAPI = item['estado'].toString();
 
-              // 1. Determinar si está apartado o ya ocupado físicamente
-              bool estaOcupado = (estadoBD != 'libre');
-              ParkingState.ocupados[index] = estaOcupado;
+              // Si el API dice 'libre', el cajón está disponible (Verde)
+              // Si dice 'reservado' (Amarillo) u 'ocupado' (Rojo), marcamos como ocupado para el gesto
+              ParkingState.ocupados[index] = (estadoAPI != 'libre');
 
-              // 2. Lógica del cronómetro (Solo si ya es 'ocupado')
-              if (estadoBD == 'ocupado' && item['fecha_fin'] != null) {
+              // 5. Lógica del cronómetro: Solo si el estado es físicamente 'ocupado'
+              if (estadoAPI == 'ocupado' && item['fecha_fin'] != null) {
                 DateTime horaFin = DateTime.parse(item['fecha_fin'].toString());
                 int restantes = horaFin.difference(DateTime.now()).inSeconds;
 
                 if (restantes > 0) {
                   ParkingState.tiempos[index] = restantes;
+                  // Iniciamos el timer local de Flutter si no está corriendo
                   if (ParkingState.timers[index] == null || !ParkingState.timers[index]!.isActive) {
                     _reanimarTimerCajon(index);
                   }
@@ -199,7 +214,8 @@ class _HomePageState extends State<HomePage> {
                   ParkingState.tiempos[index] = 0;
                 }
               } else {
-                // Si es 'reservado' (naranja), el tiempo se queda en 0 para la lógica visual
+                // Si es 'reservado' (Amarillo), el tiempo se mantiene en 0
+                // para que el UI muestre el texto "RESERVADO"
                 ParkingState.tiempos[index] = 0;
                 ParkingState.timers[index]?.cancel();
               }
@@ -207,7 +223,9 @@ class _HomePageState extends State<HomePage> {
           }
         });
       }
-    } catch (e) { debugPrint("Sync error: $e"); }
+    } catch (e) {
+      debugPrint("Error de sincronización: $e");
+    }
   }
 
   void _reanimarTimerCajon(int index) {
@@ -666,11 +684,12 @@ class _ParkingSlotItemState extends State<ParkingSlotItem> {
           ? 'https://carlossalinas.webpro1213.com/api/crear_reserva.php'
           : 'https://carlossalinas.webpro1213.com/api/crear_preferencia.php';
 
+      // ENVIAMOS EL ID REAL DE LA BASE DE DATOS
       final response = await http.post(
         Uri.parse(url),
         body: {
           'id_usuario': homeState!.idUsuario.toString(),
-          'id_espacio': (index + 1).toString(),
+          'id_espacio': ParkingState.idsReales[index].toString(),
           'monto': monto.toString(),
           'id_estacionamiento': est.id.toString(),
           'hora_llegada_estimada': llegadaProgramada.trim(),
@@ -680,13 +699,18 @@ class _ParkingSlotItemState extends State<ParkingSlotItem> {
         },
       );
 
+      // ESTO ES PARA QUE VEAS EL ERROR EN TU CONSOLA
+      debugPrint("RESPUESTA SERVIDOR: ${response.body}");
+
       final res = json.decode(response.body);
       if (res['status'] == 'success') {
         if (metodo == "Saldo") {
-          setState(() => ParkingState.ocupados[index] = true);
-          homeState._cargarDatosUsuarioServidor();
-          homeState._obtenerReservas();
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("¡Reserva confirmada!")));
+          homeState.setState(() => ParkingState.ocupados[index] = true);
+          await homeState._cargarDatosUsuarioServidor();
+          await homeState._obtenerReservas();
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("¡Reserva confirmada!")));
+          }
         } else {
           final result = await Navigator.push(context, MaterialPageRoute(builder: (_) => PagoWebView(url: res['url_pago'])));
           if (result == "success") {
@@ -694,8 +718,14 @@ class _ParkingSlotItemState extends State<ParkingSlotItem> {
             homeState._obtenerReservas();
           }
         }
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error: ${res['message']}")));
+        }
       }
-    } catch (e) { debugPrint("Error: $e"); }
+    } catch (e) {
+      debugPrint("Error en proceso de pago: $e");
+    }
   }
 
   @override
