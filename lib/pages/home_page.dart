@@ -6,8 +6,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:qr_flutter/qr_flutter.dart';
-
-// Importaciones de tus otros archivos
 import 'pago_webview.dart';
 import 'login_page.dart';
 import 'recarga_page.dart';
@@ -43,17 +41,31 @@ class Estacionamiento {
 
 // MODELO ACTUALIZADO PARA SOPORTAR MÚLTIPLES RESERVAS Y NOMBRES
 class ReservaActiva {
-  final String nombre;
   final String token;
+  final String nombre;
   final String espacio;
+  final String horaLlegada;
+  final int horasPagadas;
+  final int idEstacionamiento;
 
-  ReservaActiva({required this.nombre, required this.token, required this.espacio});
+  ReservaActiva({
+    required this.token,
+    required this.nombre,
+    required this.espacio,
+    required this.horaLlegada,
+    required this.horasPagadas,
+    required this.idEstacionamiento,
+  });
 
   factory ReservaActiva.fromJson(Map<String, dynamic> json) {
     return ReservaActiva(
-      nombre: json['nombre_reserva'] ?? "Mi Reserva",
-      token: json['token_qr'] ?? "",
-      espacio: json['id_espacio']?.toString() ?? json['numero_espacio']?.toString() ?? "N/A",
+      token: json['token_qr'] ?? '',
+      nombre: json['nombre_reserva'] ?? 'Sin nombre',
+      espacio: json['numero_espacio']?.toString() ?? '',
+
+      horaLlegada: json['hora_llegada_estimada']?.toString() ?? '',
+      horasPagadas: int.tryParse(json['horas_pagadas']?.toString() ?? '1') ?? 1,
+      idEstacionamiento: int.parse(json['id_estacionamiento']?.toString() ?? '0'),
     );
   }
 }
@@ -105,7 +117,7 @@ class HomePage extends StatefulWidget {
   State<HomePage> createState() => _HomePageState();
 }
 
-class _HomePageState extends State<HomePage> {
+class _HomePageState extends State<HomePage>with SingleTickerProviderStateMixin {
   String nombre = "Cargando...";
   String correo = "...";
   String foto = "";
@@ -117,6 +129,7 @@ class _HomePageState extends State<HomePage> {
   List<Estacionamiento> misEstacionamientos = [];
   bool cargando = true;
   bool cambiandoSucursal = false;
+  late TabController _tabController;
 
   // CAMBIO: Ahora usamos una lista en lugar de un solo token
   List<ReservaActiva> misReservas = [];
@@ -124,6 +137,7 @@ class _HomePageState extends State<HomePage> {
   @override
   void initState() {
     super.initState();
+    _tabController = TabController(length: 3, vsync: this);
     ParkingState.initNotificaciones();
     _inicializarApp();
     _timerConsulta = Timer.periodic(const Duration(seconds: 10), (timer) {
@@ -133,6 +147,7 @@ class _HomePageState extends State<HomePage> {
 
   @override
   void dispose() {
+    _tabController.dispose();
     _timerConsulta?.cancel();
     super.dispose();
   }
@@ -163,6 +178,284 @@ class _HomePageState extends State<HomePage> {
       WidgetsBinding.instance.addPostFrameCallback((_) => _mostrarDialogoSeleccion());
     }
   }
+
+  void _confirmarCancelacion(ReservaActiva reserva) {
+    // 1. Obtener tiempo actual
+    final DateTime ahora = DateTime.now();
+
+    // 2. Parsear la hora de la base de datos (ya viene con la columna nueva del PHP)
+    // Reemplazamos espacio por 'T' para que DateTime.parse no falle
+    String raw = reserva.horaLlegada.trim().replaceFirst(' ', 'T');
+
+    DateTime? horaLimite;
+    try {
+      horaLimite = DateTime.parse(raw);
+    } catch (e) {
+      debugPrint("Error parseando fecha: $e");
+      // Si falla el parseo, mostramos error y no seguimos
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Error al procesar la fecha de reserva"))
+      );
+      return;
+    }
+
+    // 3. Determinar si es tardío
+    // Es tardío si la hora actual es DESPUÉS de la hora límite
+    bool esTardio = ahora.isAfter(horaLimite);
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text(
+          "¿Confirmar Cancelación?",
+          style: TextStyle(fontWeight: FontWeight.bold),
+          textAlign: TextAlign.center,
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: esTardio ? Colors.orange.shade50 : Colors.green.shade50,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: esTardio ? Colors.orange : Colors.green,
+                  width: 1.5,
+                ),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    esTardio ? Icons.warning_amber_rounded : Icons.check_circle_rounded,
+                    color: esTardio ? Colors.orange.shade900 : Colors.green.shade900,
+                    size: 28,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      esTardio
+                          ? "Cancelación tardía: Se aplicará una comisión del 25% por penalización."
+                          : "¡Estás a tiempo! Se reembolsará el 100% de tu pago a tu saldo NexPark.",
+                      style: TextStyle(
+                        color: esTardio ? Colors.orange.shade900 : Colors.green.shade900,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 20),
+            const Text(
+              "Tu hora programada era:",
+              style: TextStyle(fontSize: 12, color: Colors.grey),
+            ),
+            Text(
+              reserva.horaLlegada, // Muestra la hora real que viene de la DB
+              style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.black87
+              ),
+            ),
+            const SizedBox(height: 10),
+            const Text(
+              "Al confirmar, el espacio se liberará inmediatamente.",
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 11, color: Colors.grey, fontStyle: FontStyle.italic),
+            ),
+          ],
+        ),
+        actionsPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text("VOLVER", style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.redAccent,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              elevation: 0,
+            ),
+            onPressed: () {
+              Navigator.pop(context);
+              _ejecutarCancelacionEnServidor(reserva.token);
+            },
+            child: const Text(
+              "SÍ, CANCELAR",
+              style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _mostrarDialogoExtender(ReservaActiva reserva) {
+    int horasExtra = 1;
+    String metodo = "Saldo";
+    double precioHora = seleccionado?.precioHora ?? 0.0;
+
+    showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          double totalExtra = precioHora * horasExtra;
+
+          return AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            title: const Text("Extender Tiempo", style: TextStyle(fontWeight: FontWeight.bold)),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text("¿Cuántas horas deseas agregar al espacio C${reserva.espacio}?"),
+                const SizedBox(height: 20),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.remove_circle_outline, color: Colors.red),
+                      onPressed: () => setDialogState(() => horasExtra > 1 ? horasExtra-- : null),
+                    ),
+                    Text("$horasExtra hr(s)", style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                    IconButton(
+                      icon: const Icon(Icons.add_circle_outline, color: Colors.green),
+                      onPressed: () => setDialogState(() => horasExtra++),
+                    ),
+                  ],
+                ),
+                const Divider(),
+                RadioListTile(
+                  title: const Text("Saldo NexPark"),
+                  value: "Saldo",
+                  groupValue: metodo,
+                  onChanged: (v) => setDialogState(() => metodo = v!),
+                ),
+                RadioListTile(
+                  title: const Text("Mercado Pago"),
+                  value: "Mercado Pago",
+                  groupValue: metodo,
+                  onChanged: (v) => setDialogState(() => metodo = v!),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  "Total Extra: \$${totalExtra.toStringAsFixed(2)}",
+                  style: const TextStyle(fontSize: 20, color: Colors.blue, fontWeight: FontWeight.bold),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(context), child: const Text("CANCELAR")),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF166088)),
+                onPressed: () {
+                  Navigator.pop(context);
+                  _procesarExtension(reserva.token, horasExtra, totalExtra, metodo);
+                },
+                child: const Text("PAGAR EXTENSIÓN", style: TextStyle(color: Colors.white)),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Future<void> _procesarExtension(String token, int horas, double monto, String metodo) async {
+    try {
+      final response = await http.post(
+        Uri.parse('https://carlossalinas.webpro1213.com/api/extender_reserva.php'),
+        body: {
+          'token_qr': token,
+          'horas_adicionales': horas.toString(),
+          'monto': monto.toString(),
+          'metodo': metodo,
+          'id_usuario': idUsuario.toString(),
+        },
+      );
+
+      final res = json.decode(response.body);
+      if (res['status'] == 'success') {
+        await _cargarDatosUsuarioServidor();
+        await _obtenerReservas();
+        setState(() {});
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Tiempo extendido con éxito"), backgroundColor: Colors.green),
+        );
+        _cargarDatosUsuarioServidor();
+        _actualizarEstadoDesdeServidor();
+      } else {
+        _mostrarAlertaError("Error", res['message']);
+      }
+    } catch (e) {
+      debugPrint("Error al extender: $e");
+    }
+  }
+
+  void _mostrarAlertaError(String titulo, String mensaje) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(
+          children: [
+            const Icon(Icons.error_outline, color: Colors.red),
+            const SizedBox(width: 10),
+            const Expanded(
+              child: Text(
+                  "Espacio Ocupado",
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)
+              ),
+            ),
+          ],
+        ),
+        content: Text(
+          mensaje,
+          style: const TextStyle(fontSize: 15),
+        ),
+        actions: [
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.redAccent,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            onPressed: () => Navigator.pop(context),
+            child: const Text("CERRAR", style: TextStyle(color: Colors.white)),
+          )
+        ],
+      ),
+    );
+  }
+
+  Future<void> _ejecutarCancelacionEnServidor(String token) async {
+    try {
+
+      final response = await http.post(
+        Uri.parse('https://carlossalinas.webpro1213.com/api/cancelar_reserva.php'),
+        body: {'token_qr': token},
+      );
+
+      final res = json.decode(response.body);
+      if (res['status'] == 'success') {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(res['message']), backgroundColor: Colors.green),
+        );
+        _obtenerReservas();
+        _cargarDatosUsuarioServidor();
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(res['message']), backgroundColor: Colors.red),
+        );
+      }
+    } catch (e) {
+      debugPrint("Error al cancelar: $e");
+    }
+  }
+
 
   Future<void> _actualizarEstadoDesdeServidor() async {
     if (seleccionado == null) return;
@@ -257,7 +550,7 @@ class _HomePageState extends State<HomePage> {
         final res = json.decode(response.body);
         if (res['status'] == 'success') {
           await _actualizarEstadoDesdeServidor();
-          _obtenerReservas(); // Refrescar lista de QRs
+          _obtenerReservas();
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text("¡Entrada exitosa!"), backgroundColor: Colors.green),
           );
@@ -360,53 +653,56 @@ class _HomePageState extends State<HomePage> {
 
   @override
   Widget build(BuildContext context) {
-    return DefaultTabController(
-      length: 3,
-      child: Scaffold(
-        appBar: AppBar(
-          title: Image.asset('assets/logowhite.png', height: 40, fit: BoxFit.contain),
-          centerTitle: true,
-          backgroundColor: const Color(0xFF166088),
-          foregroundColor: Colors.white,
-          bottom: const TabBar(
-            indicatorColor: Colors.white,
-            labelColor: Colors.white,
-            unselectedLabelColor: Colors.white70,
-            tabs: [
-              Tab(icon: Icon(Icons.local_parking), text: "Cajones"),
-              Tab(icon: Icon(Icons.map), text: "Mapa"),
-              Tab(icon: Icon(Icons.qr_code), text: "QR"),
-            ],
-          ),
-        ),
-        drawer: _buildDrawer(),
-        body: Stack(
-          children: [
-            cargando
-                ? const Center(child: CircularProgressIndicator())
-                : seleccionado == null
-                ? const Center(child: Text("Selecciona un estacionamiento"))
-                : Column(
-              children: [
-                _buildInfoBanner(),
-                Expanded(
-                  child: TabBarView(
-                    children: [
-                      _buildParkingGrid(),
-                      const Center(child: Text("Vista de Mapa en desarrollo")),
-                      _buildQRView(), // ESTA ES LA VISTA QUE CAMBIÓ
-                    ],
-                  ),
-                ),
-              ],
-            ),
-            if (cambiandoSucursal)
-              Container(
-                color: Colors.white.withOpacity(0.8),
-                child: const Center(child: CircularProgressIndicator()),
-              ),
+    return Scaffold(
+      appBar: AppBar(
+        title: Image.asset('assets/logowhite.png', height: 40, fit: BoxFit.contain),
+        centerTitle: true,
+        backgroundColor: const Color(0xFF166088),
+        foregroundColor: Colors.white,
+        // Usamos el controlador manual para sincronizar las pestañas
+        bottom: TabBar(
+          controller: _tabController,
+          indicatorColor: Colors.white,
+          labelColor: Colors.white,
+          unselectedLabelColor: Colors.white70,
+          tabs: [
+            Tab(icon: Icon(Icons.local_parking), text: "Cajones"),
+            Tab(icon: Icon(Icons.map), text: "Mapa"),
+            Tab(icon: Icon(Icons.qr_code), text: "QR"),
           ],
         ),
+      ),
+      drawer: _buildDrawer(),
+      body: Stack(
+        children: [
+          // LÓGICA DE ESTADOS (CARGANDO / SELECCIÓN)
+          cargando
+              ? const Center(child: CircularProgressIndicator())
+              : seleccionado == null
+              ? const Center(child: Text("Selecciona un estacionamiento"))
+              : Column(
+            children: [
+              _buildInfoBanner(),
+              Expanded(
+                child: TabBarView(
+                  controller: _tabController,
+                  children: [
+                    _buildParkingGrid(),
+                    const Center(child: Text("Vista de Mapa en desarrollo")),
+                    _buildQRView(),
+                  ],
+                ),
+              ),
+            ],
+          ),
+
+          // CAPA DE CARGA AL CAMBIAR SUCURSAL
+          if (cambiandoSucursal)
+            Container(
+              color: Colors.white.withOpacity(0.8),
+              child: const Center(child: CircularProgressIndicator()),
+            ),
+        ],
       ),
     );
   }
@@ -470,16 +766,30 @@ class _HomePageState extends State<HomePage> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          ActionChip(
-            avatar: const Icon(Icons.business, size: 16),
-            label: Text(seleccionado?.nombre ?? "Seleccionar"),
-            onPressed: _mostrarDialogoSeleccion,
+          // USAMOS FLEXIBLE PARA QUE EL CHIP SE ADAPTE SI EL NOMBRE ES MUY LARGO
+          Flexible(
+            child: ActionChip(
+              avatar: const Icon(Icons.business, size: 16),
+              // Si el nombre es muy largo, se mostrarán puntos suspensivos (...)
+              label: Text(
+                seleccionado?.nombre ?? "Seleccionar",
+                overflow: TextOverflow.ellipsis,
+              ),
+              onPressed: _mostrarDialogoSeleccion,
+            ),
           ),
+
+          const SizedBox(width: 10), // Espacio mínimo
+
           Row(
             children: [
               Chip(
                 backgroundColor: Colors.green.shade50,
-                label: Text("\$$saldo", style: const TextStyle(color: Colors.green, fontWeight: FontWeight.bold)),
+                // Si el saldo es grande, el chip crecerá pero el Flexible anterior cederá espacio
+                label: Text(
+                    "\$$saldo",
+                    style: const TextStyle(color: Colors.green, fontWeight: FontWeight.bold)
+                ),
               ),
               if (seleccionado != null && seleccionado!.niveles > 1) ...[
                 const SizedBox(width: 8),
@@ -511,26 +821,44 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  // VISTA DE QR MEJORADA: LISTA DESLIZABLE DE TARJETAS
+
   Widget _buildQRView() {
-    if (misReservas.isEmpty) {
+    // 1. FILTRO: Solo mostramos las reservas que coinciden con la sucursal que el usuario está viendo
+    final reservasFiltradas = misReservas.where((r) {
+      return r.idEstacionamiento == seleccionado?.id;
+    }).toList();
+
+    // 2. Si la lista global está vacía o no hay nada para este estacionamiento
+    if (reservasFiltradas.isEmpty) {
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Icon(Icons.qr_code_scanner, size: 80, color: Colors.grey),
+            Icon(Icons.qr_code_scanner, size: 80, color: Colors.grey.shade300),
             const SizedBox(height: 10),
-            const Text("No tienes reservas activas", style: TextStyle(color: Colors.grey)),
-            ElevatedButton(onPressed: _obtenerReservas, child: const Text("Actualizar")),
+            Text(
+              misReservas.isEmpty
+                  ? "No tienes reservas activas"
+                  : "Sin reservas en ${seleccionado?.nombre}",
+              style: const TextStyle(color: Colors.grey),
+            ),
+            const SizedBox(height: 20),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF166088)),
+              onPressed: _obtenerReservas,
+              child: const Text("ACTUALIZAR", style: TextStyle(color: Colors.white)),
+            ),
           ],
         ),
       );
     }
+
+    // 3. Mostramos solo los QRs filtrados
     return ListView.builder(
       padding: const EdgeInsets.all(20),
-      itemCount: misReservas.length,
+      itemCount: reservasFiltradas.length,
       itemBuilder: (context, index) {
-        final r = misReservas[index];
+        final r = reservasFiltradas[index];
         return Card(
           elevation: 4,
           margin: const EdgeInsets.only(bottom: 20),
@@ -540,15 +868,69 @@ class _HomePageState extends State<HomePage> {
             child: Column(
               children: [
                 Text(r.nombre, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF166088))),
-                Text("Espacio: C${r.espacio}", style: const TextStyle(color: Colors.grey)),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.access_time, size: 14, color: Colors.grey),
+                    const SizedBox(width: 5),
+                    Text(
+                      "Llegada: ${r.horaLlegada.length > 16 ? r.horaLlegada.substring(11, 16) : r.horaLlegada}",
+                      style: const TextStyle(color: Colors.grey, fontSize: 13),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 5),
+                Text(
+                  "Espacio: C${r.espacio}",
+                  style: const TextStyle(color: Colors.grey, fontWeight: FontWeight.bold, fontSize: 16),
+                ),
+                const SizedBox(height: 15),
+                Text(
+                  r.horasPagadas > 1
+                      ? "Tiempo: 1 hr + ${r.horasPagadas - 1} hr extra"
+                      : "Tiempo: ${r.horasPagadas} hr",
+                  style: const TextStyle(color: Color(0xFF166088), fontWeight: FontWeight.bold, fontSize: 15),
+                ),
                 const SizedBox(height: 15),
                 QrImageView(data: r.token, size: 200, foregroundColor: const Color(0xFF166088)),
                 const SizedBox(height: 15),
-                ElevatedButton.icon(
-                  style: ElevatedButton.styleFrom(backgroundColor: Colors.orange, foregroundColor: Colors.white),
-                  onPressed: () => _simularEntradaQR(r.token),
-                  icon: const Icon(Icons.check_circle),
-                  label: const Text("SIMULAR ENTRADA"),
+
+                // Botón para simular entrada
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(backgroundColor: Colors.orange, foregroundColor: Colors.white),
+                    onPressed: () => _simularEntradaQR(r.token),
+                    icon: const Icon(Icons.check_circle),
+                    label: const Text("SIMULAR ENTRADA"),
+                  ),
+                ),
+                const SizedBox(height: 8),
+
+                // Botón AUMENTAR TIEMPO
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(backgroundColor: Colors.blue.shade700, foregroundColor: Colors.white),
+                    onPressed: () => _mostrarDialogoExtender(r),
+                    icon: const Icon(Icons.more_time),
+                    label: const Text("AUMENTAR TIEMPO"),
+                  ),
+                ),
+                const SizedBox(height: 8),
+
+                // Botón para cancelar reserva
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.red,
+                      side: const BorderSide(color: Colors.red),
+                    ),
+                    onPressed: () => _confirmarCancelacion(r),
+                    icon: const Icon(Icons.cancel),
+                    label: const Text("CANCELAR RESERVA"),
+                  ),
                 ),
               ],
             ),
@@ -585,6 +967,46 @@ class _ParkingSlotItemState extends State<ParkingSlotItem> {
     localUpdateTimer?.cancel();
     super.dispose();
   }
+
+
+  void _mostrarAlertaExito(String titulo, String mensaje) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+
+        title: Row(
+          children: [
+            const Icon(Icons.check_circle, color: Colors.green),
+            const SizedBox(width: 10),
+            Expanded(
+                child: Text(
+                  titulo,
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: 1,
+                )
+            ),
+          ],
+        ),
+
+        content: Text(mensaje),
+        actions: [ElevatedButton(onPressed: () => Navigator.pop(context), child: const Text("Entendido"))],
+      ),
+    );
+  }
+
+  void _mostrarAlertaError(String titulo, String mensaje) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(children: [Icon(Icons.error, color: Colors.red), SizedBox(width: 10), Text(titulo)]),
+        content: Text(mensaje), // Aquí saldrá el mensaje del PHP: "El espacio ya está ocupado..."
+        actions: [ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: Colors.red), onPressed: () => Navigator.pop(context), child: Text("Cerrar"))],
+      ),
+    );
+  }
+
 
   Future<void> _seleccionarHoraLlegada(BuildContext context, StateSetter setDialogState) async {
     final TimeOfDay? picked = await showTimePicker(context: context, initialTime: TimeOfDay.now());
@@ -684,14 +1106,12 @@ class _ParkingSlotItemState extends State<ParkingSlotItem> {
           ? 'https://carlossalinas.webpro1213.com/api/crear_reserva.php'
           : 'https://carlossalinas.webpro1213.com/api/crear_preferencia.php';
 
-      // ENVIAMOS EL ID REAL DE LA BASE DE DATOS
       final response = await http.post(
         Uri.parse(url),
         body: {
           'id_usuario': homeState!.idUsuario.toString(),
           'id_espacio': ParkingState.idsReales[index].toString(),
           'monto': monto.toString(),
-          'id_estacionamiento': est.id.toString(),
           'hora_llegada_estimada': llegadaProgramada.trim(),
           'metodo': metodo,
           'horas': horas.toString(),
@@ -699,28 +1119,37 @@ class _ParkingSlotItemState extends State<ParkingSlotItem> {
         },
       );
 
-      // ESTO ES PARA QUE VEAS EL ERROR EN TU CONSOLA
-      debugPrint("RESPUESTA SERVIDOR: ${response.body}");
-
       final res = json.decode(response.body);
+
       if (res['status'] == 'success') {
+        // CASO DE ÉXITO
         if (metodo == "Saldo") {
           homeState.setState(() => ParkingState.ocupados[index] = true);
           await homeState._cargarDatosUsuarioServidor();
           await homeState._obtenerReservas();
+
+          await homeState._actualizarEstadoDesdeServidor();
+          // Notificación en la barra de estado
+          ParkingState.notificar("¡Reserva Confirmada! Lugar: C${index + 1} para $nombreR.");
+
           if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("¡Reserva confirmada!")));
+            _mostrarAlertaExito("¡Reserva Exitosa!", "Tu lugar ha sido apartado correctamente.");
+            homeState._tabController.animateTo(2);
           }
         } else {
+          // Si es Mercado Pago, el WebView se encarga del resto
           final result = await Navigator.push(context, MaterialPageRoute(builder: (_) => PagoWebView(url: res['url_pago'])));
           if (result == "success") {
             homeState._cargarDatosUsuarioServidor();
             homeState._obtenerReservas();
+            homeState._tabController.animateTo(2);
           }
         }
       } else {
+        // --- CASO DE ERROR (Colisión o falta de saldo) ---
+        ParkingState.notificar("Error: No se pudo completar la reserva.");
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error: ${res['message']}")));
+          _mostrarAlertaError("Registro Fallido", res['message'] ?? "Error desconocido");
         }
       }
     } catch (e) {
@@ -734,19 +1163,19 @@ class _ParkingSlotItemState extends State<ParkingSlotItem> {
     bool esDis = ParkingState.esDiscapacitado[widget.index];
     int tiempoRestante = ParkingState.tiempos[widget.index];
 
-    // LÓGICA DE COLORES:
+    // LÓGICA DE COLORES CORREGIDA:
     Color colorCajon;
 
     if (!ocupado) {
       // ESTADO: LIBRE
-      colorCajon = esDis ? Colors.blue.shade600 : Colors.green.shade400;
+      colorCajon = esDis ? Colors.blue.shade600 : Colors.green.shade500;
     } else {
       // ESTADO: RESERVADO U OCUPADO
       if (tiempoRestante > 0) {
-        // ROJO: Ya escaneó el QR y el tiempo está corriendo
+        // Ocupado físicamente (el coche ya llegó)
         colorCajon = Colors.red.shade400;
       } else {
-        // NARANJA: Está apartado en la BD pero aún no llega (tiempo = 0)
+        // Estado "Apartado" (aún no escanean el QR)
         colorCajon = Colors.orange.shade400;
       }
     }
