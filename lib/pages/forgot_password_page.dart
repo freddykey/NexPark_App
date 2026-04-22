@@ -31,17 +31,17 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
         'correo': email
       }).timeout(const Duration(seconds: 12));
 
-      // DEBUG: Esto es vital para saber qué está pasando
+
       print("Status Code: ${response.statusCode}");
       print("Respuesta Raw: ${response.body}");
 
-      // Intentamos decodificar el JSON
+
       final res = json.decode(response.body);
 
       if (res['status'] == 'success') {
         _mensaje("Código enviado con éxito", Colors.green);
 
-        // Pequeña espera para que el usuario vea el mensaje verde
+
         Future.delayed(const Duration(seconds: 1), () {
           if (!mounted) return;
           Navigator.push(

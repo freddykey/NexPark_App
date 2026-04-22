@@ -49,6 +49,8 @@ class _UserAccountState extends State<UserAccount> {
         telefono = prefs.getString('telefono_usuario') ?? "";
         saldo = prefs.getString('saldo_usuario') ?? "0";
         fecha = prefs.getString('fecha_registro') ?? "--/--/----";
+
+        vehiculos = prefs.getString('cantidad_vehiculos') ?? "0";
       });
     }
 
@@ -101,6 +103,7 @@ class _UserAccountState extends State<UserAccount> {
             telefono = _limpiarNulo(userData['telefono']);
             saldo = userData['saldo']?.toString() ?? "0";
             vehiculos = res['vehiculos']?.toString() ?? "0";
+            prefs.setString('cantidad_vehiculos', vehiculos);
 
 
             String fotoServidor = userData['foto']?.toString() ?? "";
@@ -367,103 +370,159 @@ class _UserAccountState extends State<UserAccount> {
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.white),
       ),
-      drawer: Drawer(
-        child: Column(
-          children: [
-            UserAccountsDrawerHeader(
-              decoration: const BoxDecoration(color: Color(0xFF166088)),
-              currentAccountPicture: CircleAvatar(
-                backgroundColor: Colors.white,
-                backgroundImage: foto.isNotEmpty ? NetworkImage(foto) : null,
-                child: foto.isEmpty ? Text(nombre.isNotEmpty ? nombre[0].toUpperCase() : "U", style: const TextStyle(fontSize: 40, color: Color(0xFF166088))) : null,
-              ),
-              accountName: Text(nombre, style: const TextStyle(fontWeight: FontWeight.bold)),
-              accountEmail: Text(correo),
-            ),
-            ListTile(leading: const Icon(Icons.home, color: Color(0xFF166088)), title: const Text("Inicio"), onTap: () => Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const HomePage()))),
-            ListTile(leading: const Icon(Icons.person, color: Color(0xFF166088)), title: const Text("Cuenta"), onTap: () => Navigator.pop(context)),
-            ListTile(leading: const Icon(Icons.add_card, color: Color(0xFF166088)), title: const Text("Recargar Saldo"), onTap: () {Navigator.pop(context);Navigator.push(context, MaterialPageRoute(builder: (context) => const RecargaPage()),);},),
-            const Spacer(),
-            const Divider(indent: 20, endIndent: 20),
-            ListTile(leading: const Icon(Icons.logout_rounded, color: Color(0xFFEB5757)), title: const Text("Cerrar sesión", style: TextStyle(color: Color(0xFFEB5757), fontWeight: FontWeight.bold),), onTap: _logout,),
+      drawer: _buildDrawerInterno(),
 
-            const Padding(padding: EdgeInsets.all(20.0), child: Text("NexPark alpha-v0.4.2", style: TextStyle(color: Colors.grey, fontSize: 12),),),
-            const SizedBox(height: 10),
-          ],
-        ),
-      ),
-      body: SingleChildScrollView(
-        child: Column(
-          children: [
-            Stack(
-              alignment: Alignment.center,
-              clipBehavior: Clip.none,
-              children: [
-                Container(height: 100, decoration: const BoxDecoration(color: Color(0xFF166088), borderRadius: BorderRadius.vertical(bottom: Radius.circular(30)))),
-                Positioned(
-                  top: 30,
-                  child: GestureDetector(
-                    onTap: _cambiarFoto,
-                    child: Stack(
-                      children: [
-                        CircleAvatar(radius: 60, backgroundColor: Colors.white, child: CircleAvatar(radius: 55, backgroundImage: foto.isNotEmpty ? NetworkImage(foto) : null, backgroundColor: Colors.grey[200], child: foto.isEmpty ? const Icon(Icons.person, size: 70, color: Color(0xFF166088)) : null)),
-                        const Positioned(bottom: 5, right: 5, child: CircleAvatar(radius: 18, backgroundColor: Color(0xFF166088), child: Icon(Icons.camera_alt, size: 18, color: Colors.white))),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 100),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 25),
-              child: Column(
+      body: SafeArea(
+        child: SingleChildScrollView(
+          physics: const BouncingScrollPhysics(),
+          child: Column(
+            children: [
+              Stack(
+                alignment: Alignment.center,
+                clipBehavior: Clip.none,
                 children: [
-                  Text("$nombre $fullApellidos", textAlign: TextAlign.center, style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Color(0xFF166088))),
-                  Text("Saldo Actual: \$ $saldo", style: const TextStyle(color: Colors.green, fontWeight: FontWeight.bold, fontSize: 16)),
-                  const SizedBox(height: 30),
                   Container(
-                    padding: const EdgeInsets.all(20),
-                    decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, 5))]),
-                    child: Column(
-                      children: [
-                        _buildInfoTile(Icons.person_outline, "Apellido Paterno", _validar(apellidoP)),
-                        const Divider(),
-                        _buildInfoTile(Icons.person_outline, "Apellido Materno", _validar(apellidoM)),
-                        const Divider(),
-                        _buildInfoTile(Icons.email_outlined, "Correo", correo),
-                        const Divider(),
-                        _buildInfoTile(Icons.phone_android_outlined, "Teléfono", _validar(telefono)),
-                        const Divider(),
-                        _buildInfoTile(Icons.directions_car_outlined, "Vehículos", "$vehiculos Registrados"),
-                        const Divider(),
-                        _buildInfoTile(Icons.calendar_today_outlined, "Miembro desde", fecha),
-                      ],
+                      height: 100,
+                      decoration: const BoxDecoration(
+                          color: Color(0xFF166088),
+                          borderRadius: BorderRadius.vertical(bottom: Radius.circular(30))
+                      )
+                  ),
+                  Positioned(
+                    top: 30,
+                    child: GestureDetector(
+                      onTap: _cambiarFoto,
+                      child: Stack(
+                        children: [
+                          CircleAvatar(
+                              radius: 60,
+                              backgroundColor: Colors.white,
+                              child: CircleAvatar(
+                                  radius: 55,
+                                  backgroundImage: foto.isNotEmpty ? NetworkImage(foto) : null,
+                                  backgroundColor: Colors.grey[200],
+                                  child: foto.isEmpty ? const Icon(Icons.person, size: 70, color: Color(0xFF166088)) : null
+                              )
+                          ),
+                          const Positioned(
+                              bottom: 5,
+                              right: 5,
+                              child: CircleAvatar(
+                                  radius: 18,
+                                  backgroundColor: Color(0xFF166088),
+                                  child: Icon(Icons.camera_alt, size: 18, color: Colors.white)
+                              )
+                          ),
+                        ],
+                      ),
                     ),
                   ),
-                  const SizedBox(height: 30),
-                  SizedBox(
-                    width: double.infinity,
-                    height: 50,
-                    child: OutlinedButton.icon(
-                      onPressed: _editarUsuario,
-                      icon: const Icon(Icons.edit, size: 20),
-                      label: const Text("Editar Información"),
-                      style: OutlinedButton.styleFrom(foregroundColor: const Color(0xFF166088), side: const BorderSide(color: Color(0xFF166088)), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15))),
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  SizedBox(
-                    width: double.infinity,
-                    height: 50,
-                    child: TextButton.icon(onPressed: _cambiarPassword, icon: const Icon(Icons.lock_outline, size: 20, color: Colors.red), label: const Text("Cambiar Contraseña", style: TextStyle(color: Colors.red))),
-                  ),
-                  const SizedBox(height: 20),
                 ],
               ),
-            ),
-          ],
+              const SizedBox(height: 80),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 25),
+                child: Column(
+                  children: [
+                    Text(
+                        "$nombre $fullApellidos",
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Color(0xFF166088))
+                    ),
+                    const SizedBox(height: 5),
+                    Text(
+                        "Saldo Actual: \$ $saldo",
+                        style: const TextStyle(color: Colors.green, fontWeight: FontWeight.bold, fontSize: 16)
+                    ),
+                    const SizedBox(height: 25),
+                    Container(
+                      padding: const EdgeInsets.all(20),
+                      decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(20),
+                          boxShadow: [
+                            BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, 5))
+                          ]
+                      ),
+                      child: Column(
+                        children: [
+                          _buildInfoTile(Icons.person_outline, "Apellido Paterno", _validar(apellidoP)),
+                          const Divider(),
+                          _buildInfoTile(Icons.person_outline, "Apellido Materno", _validar(apellidoM)),
+                          const Divider(),
+                          _buildInfoTile(Icons.email_outlined, "Correo", correo),
+                          const Divider(),
+                          _buildInfoTile(Icons.phone_android_outlined, "Teléfono", _validar(telefono)),
+                          const Divider(),
+                          _buildInfoTile(Icons.directions_car_outlined, "Vehículos", "$vehiculos Registrados"),
+                          const Divider(),
+                          _buildInfoTile(Icons.calendar_today_outlined, "Miembro desde", fecha),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 30),
+
+                    // BOTONES PRINCIPALES
+                    SizedBox(
+                      width: double.infinity,
+                      height: 50,
+                      child: OutlinedButton.icon(
+                        onPressed: _editarUsuario,
+                        icon: const Icon(Icons.edit, size: 20),
+                        label: const Text("Editar Información"),
+                        style: OutlinedButton.styleFrom(
+                            foregroundColor: const Color(0xFF166088),
+                            side: const BorderSide(color: Color(0xFF166088)),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15))
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      width: double.infinity,
+                      height: 50,
+                      child: TextButton.icon(
+                          onPressed: _cambiarPassword,
+                          icon: const Icon(Icons.lock_outline, size: 20, color: Colors.red),
+                          label: const Text("Cambiar Contraseña", style: TextStyle(color: Colors.red))
+                      ),
+                    ),
+
+                    const SizedBox(height: 40),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
+      ),
+    );
+  }
+
+  // Helper para el Drawer si lo necesitas dentro del mismo archivo
+  Widget _buildDrawerInterno() {
+    return Drawer(
+      child: Column(
+        children: [
+          UserAccountsDrawerHeader(
+            decoration: const BoxDecoration(color: Color(0xFF166088)),
+            currentAccountPicture: CircleAvatar(
+              backgroundColor: Colors.white,
+              backgroundImage: foto.isNotEmpty ? NetworkImage(foto) : null,
+              child: foto.isEmpty ? Text(nombre.isNotEmpty ? nombre[0].toUpperCase() : "U", style: const TextStyle(fontSize: 40, color: Color(0xFF166088))) : null,
+            ),
+            accountName: Text(nombre, style: const TextStyle(fontWeight: FontWeight.bold)),
+            accountEmail: Text(correo),
+          ),
+          ListTile(leading: const Icon(Icons.home, color: Color(0xFF166088)), title: const Text("Inicio"), onTap: () => Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const HomePage()))),
+          ListTile(leading: const Icon(Icons.person, color: Color(0xFF166088)), title: const Text("Cuenta"), onTap: () => Navigator.pop(context)),
+          ListTile(leading: const Icon(Icons.add_card, color: Color(0xFF166088)), title: const Text("Recargar Saldo"), onTap: () {Navigator.pop(context);Navigator.push(context, MaterialPageRoute(builder: (context) => const RecargaPage()),);},),
+          const Spacer(),
+          const Divider(indent: 20, endIndent: 20),
+          ListTile(leading: const Icon(Icons.logout_rounded, color: Color(0xFFEB5757)), title: const Text("Cerrar sesión", style: TextStyle(color: Color(0xFFEB5757), fontWeight: FontWeight.bold),), onTap: _logout,),
+          const Padding(padding: EdgeInsets.all(20.0), child: Text("NexPark alpha-v0.5.0", style: TextStyle(color: Colors.grey, fontSize: 12),),),
+          const SizedBox(height: 10),
+        ],
       ),
     );
   }

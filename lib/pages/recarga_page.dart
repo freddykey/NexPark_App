@@ -30,7 +30,7 @@ class _RecargaPageState extends State<RecargaPage> {
     _cargarDatosUsuario();
   }
 
-  // Cargar datos para que el Drawer no salga vacío
+
   Future<void> _cargarDatosUsuario() async {
     final prefs = await SharedPreferences.getInstance();
     setState(() {
