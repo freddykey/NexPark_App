@@ -551,8 +551,7 @@ class _HomePageState extends State<HomePage>with SingleTickerProviderStateMixin 
 
               String estadoAPI = item['estado'].toString();
 
-              // MODIFICACIÓN CRÍTICA: Solo ocupado si el estado es 'ocupado'
-              // Si es 'reservado' no marcamos como ocupado para que el Usuario B pueda tocarlo
+              // 1. GESTIÓN DE OCUPADO (Físico o Reserva activa)
               ParkingState.ocupados[index] = (estadoAPI == 'ocupado');
 
               if (estadoAPI == 'ocupado' && item['fecha_fin'] != null) {
@@ -568,27 +567,20 @@ class _HomePageState extends State<HomePage>with SingleTickerProviderStateMixin 
                   ParkingState.tiempos[index] = 0;
                 }
               }
-              else if (estadoAPI == 'reservado' || estadoAPI == 'reservado_futuro') {
-                // Calculamos cuánto falta para la llegada del dueño
-                if (item['hora_llegada_estimada'] != null) {
-                  DateTime horaLlegada = DateTime.parse(item['hora_llegada_estimada'].toString());
-                  int minutosFaltantes = horaLlegada.difference(DateTime.now()).inMinutes;
-
-                  // Si faltan 15 min o menos, bloqueamos con -1 (Naranja)
-                  // Si faltan más de 15 min, dejamos en -2 (Verde/Editable para otros)
-                  if (minutosFaltantes <= 15) {
-                    ParkingState.tiempos[index] = -1;
-                  } else {
-                    ParkingState.tiempos[index] = -2;
-                  }
-                } else {
-                  // Si no hay hora (por seguridad), lo marcamos como reserva lejana
-                  ParkingState.tiempos[index] = -2;
-                }
+              // 2. GESTIÓN DE APARTADO (Naranja para Usuario B)
+              else if (estadoAPI == 'reservado') {
+                // El PHP ya calculó que faltan menos de 15 min. Marcamos -1.
+                ParkingState.tiempos[index] = -1;
                 ParkingState.timers[index]?.cancel();
               }
+              // 3. GESTIÓN DE RESERVA FUTURA (Verde con Aviso)
+              else if (estadoAPI == 'reservado_futuro') {
+                // El PHP ya calculó que falta mucho tiempo. Marcamos -2.
+                ParkingState.tiempos[index] = -2;
+                ParkingState.timers[index]?.cancel();
+              }
+              // 4. LIBRE TOTAL
               else {
-                // LIBRE
                 ParkingState.tiempos[index] = 0;
                 ParkingState.timers[index]?.cancel();
               }
