@@ -28,6 +28,8 @@ class Estacionamiento {
   final int totalCajones;
   final int niveles;
   final double precioHora;
+  final String horaApertura;
+  final String horaCierre;
 
   Estacionamiento({
     required this.id,
@@ -35,6 +37,8 @@ class Estacionamiento {
     required this.totalCajones,
     required this.niveles,
     required this.precioHora,
+    required this.horaApertura,
+    required this.horaCierre,
   });
 
   factory Estacionamiento.fromJson(Map<String, dynamic> json) {
@@ -44,6 +48,8 @@ class Estacionamiento {
       totalCajones: int.tryParse(json['totalCajones']?.toString() ?? json['total_cajones']?.toString() ?? '0') ?? 0,
       niveles: int.tryParse(json['niveles']?.toString() ?? '1') ?? 1,
       precioHora: double.tryParse(json['precio_hora']?.toString() ?? '0.0') ?? 0.0,
+      horaApertura: json['hora_apertura'] ?? "00:00:00",
+      horaCierre: json['hora_cierre'] ?? "23:59:59",
     );
   }
 }
@@ -863,47 +869,74 @@ class _HomePageState extends State<HomePage>with SingleTickerProviderStateMixin 
   }
 
   Widget _buildInfoBanner() {
+
+    if (seleccionado == null) return const SizedBox.shrink();
+    final String apertura = seleccionado!.horaApertura.substring(0, 5);
+    final String cierre = seleccionado!.horaCierre.substring(0, 5);
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       color: Colors.white,
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Flexible(
-            child: ActionChip(
-              avatar: const Icon(Icons.business, size: 16),
-
-              label: Text(
-                seleccionado?.nombre ?? "Seleccionar",
-                overflow: TextOverflow.ellipsis,
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Flexible(
+                child: ActionChip(
+                  avatar: const Icon(Icons.business, size: 16),
+                  label: Text(
+                    seleccionado!.nombre,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  onPressed: _mostrarDialogoSeleccion,
+                ),
               ),
-              onPressed: _mostrarDialogoSeleccion,
-            ),
+              const SizedBox(width: 10),
+              Row(
+                children: [
+                  Chip(
+                    backgroundColor: Colors.green.shade50,
+                    label: Text(
+                        "\$$saldo",
+                        style: const TextStyle(color: Colors.green, fontWeight: FontWeight.bold)
+                    ),
+                  ),
+                  if (seleccionado!.niveles > 1) ...[
+                    const SizedBox(width: 8),
+                    DropdownButton<int>(
+                      value: pisoSeleccionado,
+                      underline: const SizedBox(),
+                      items: List.generate(seleccionado!.niveles, (i) => i + 1)
+                          .map((p) => DropdownMenuItem(value: p, child: Text("Piso $p")))
+                          .toList(),
+                      onChanged: (v) => setState(() => pisoSeleccionado = v!),
+                    ),
+                  ]
+                ],
+              ),
+            ],
           ),
 
-          const SizedBox(width: 10),
-
-          Row(
-            children: [
-              Chip(
-                backgroundColor: Colors.green.shade50,
-
-                label: Text(
-                    "\$$saldo",
-                    style: const TextStyle(color: Colors.green, fontWeight: FontWeight.bold)
+          // SECCIÓN DE HORARIO REAL (BASE DE DATOS)
+          Padding(
+            padding: const EdgeInsets.only(top: 4, bottom: 4),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.access_time_filled, size: 14, color: Colors.blueGrey.shade700),
+                const SizedBox(width: 6),
+                Text(
+                  "Horario de servicio: $apertura - $cierre hrs",
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.blueGrey.shade900,
+                  ),
                 ),
-              ),
-              if (seleccionado != null && seleccionado!.niveles > 1) ...[
-                const SizedBox(width: 8),
-                DropdownButton<int>(
-                  value: pisoSeleccionado,
-                  underline: const SizedBox(),
-                  items: List.generate(seleccionado!.niveles, (i) => i + 1)
-                      .map((p) => DropdownMenuItem(value: p, child: Text("Piso $p"))).toList(),
-                  onChanged: (v) => setState(() => pisoSeleccionado = v!),
-                ),
-              ]
-            ],
+              ],
+            ),
           ),
         ],
       ),
@@ -1056,17 +1089,7 @@ class _HomePageState extends State<HomePage>with SingleTickerProviderStateMixin 
                 const SizedBox(height: 12),
 
                 // BOTONES DE ACCIÓN RESTANTES
-                SizedBox(
-                  width: double.infinity,
-                  height: 48,
-                  child: ElevatedButton.icon(
-                    style: ElevatedButton.styleFrom(backgroundColor: Colors.orange, foregroundColor: Colors.white),
-                    onPressed: () => _simularEntradaQR(r.token),
-                    icon: const Icon(Icons.check_circle),
-                    label: const Text("SIMULAR ENTRADA"),
-                  ),
-                ),
-                const SizedBox(height: 12),
+
 
                 SizedBox(
                   width: double.infinity,
@@ -1493,12 +1516,41 @@ class _ParkingSlotItemState extends State<ParkingSlotItem> {
   }
 
   Future<void> _seleccionarHoraLlegada(BuildContext context, StateSetter setDialogState) async {
-    final TimeOfDay? picked = await showTimePicker(context: context, initialTime: TimeOfDay.now());
-    if (picked != null) {
-      final ahora = DateTime.now();
-      final sel = DateTime(ahora.year, ahora.month, ahora.day, picked.hour, picked.minute);
-      setDialogState(() => llegadaProgramada = sel.toString().split('.')[0]);
+    final DateTime ahora = DateTime.now();
+
+    final TimeOfDay? horaSeleccionada = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.now(),
+      initialEntryMode: TimePickerEntryMode.dial,
+      helpText: "INGRESA HORA DE LLEGADA",
+      builder: (context, child) {
+        return MediaQuery(
+          data: MediaQuery.of(context).copyWith(alwaysUse24HourFormat: false),
+          child: child!,
+        );
+      },
+    );
+
+    if (horaSeleccionada == null) return;
+
+    DateTime fechaFinal = DateTime(
+      ahora.year, ahora.month, ahora.day,
+      horaSeleccionada.hour, horaSeleccionada.minute,
+    );
+
+    if (fechaFinal.isBefore(ahora.subtract(const Duration(minutes: 1)))) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("❌ Esta hora ya pasó"), backgroundColor: Colors.red),
+      );
+      setDialogState(() {
+        llegadaProgramada = "INVÁLIDA";
+      });
+      return;
     }
+
+    setDialogState(() {
+      llegadaProgramada = fechaFinal.toString().substring(0, 19);
+    });
   }
 
   Future<void> _cargarVehiculosUsuario() async {
@@ -1526,7 +1578,7 @@ class _ParkingSlotItemState extends State<ParkingSlotItem> {
     final est = homeState.seleccionado!;
     final TextEditingController nombreController = TextEditingController(text: "Reserva C${index + 1}");
 
-    // 1. CHECK DE DISPONIBILIDAD FUTURA
+    // 1. CHECK DE DISPONIBILIDAD FUTURA (Tu lógica existente)
     try {
       final checkRes = await http.get(Uri.parse(
           'https://carlossalinas.webpro1213.com/api/check_disponibilidad.php?id_espacio=${ParkingState.idsReales[index]}'
@@ -1558,7 +1610,7 @@ class _ParkingSlotItemState extends State<ParkingSlotItem> {
       debugPrint("Error en check preventivo: $e");
     }
 
-    // 2. VALIDACIONES DE TIPO DE CAJÓN
+    // 2. VALIDACIONES DE TIPO DE CAJÓN (Tu lógica existente)
     if (ParkingState.esDiscapacitado[index]) {
       bool? continuar = await showDialog<bool>(
         context: context,
@@ -1574,7 +1626,7 @@ class _ParkingSlotItemState extends State<ParkingSlotItem> {
       if (continuar != true) return;
     }
 
-    // 3. DIÁLOGO DE CONFIGURACIÓN
+    // 3. DIÁLOGO DE CONFIGURACIÓN CON BLOQUEOS
     int horas = 1;
     String metodo = "Saldo";
 
@@ -1582,7 +1634,31 @@ class _ParkingSlotItemState extends State<ParkingSlotItem> {
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setDialogState) {
+
+          // >>> AQUÍ AGREGAS LA LÓGICA DE VALIDACIÓN <<<
+          bool horaPasada = llegadaProgramada == "INVÁLIDA";
+          bool fueraDeHorario = false;
+
+          if (!horaPasada) {
+            DateTime entrada = DateTime.parse(llegadaProgramada);
+            DateTime salida = entrada.add(Duration(hours: horas));
+
+            int minEntrada = entrada.hour * 60 + entrada.minute;
+            int minSalida = salida.hour * 60 + salida.minute;
+
+            // Usamos 'est' que ya lo tienes definido unas líneas arriba en tu función
+            int minApertura = int.parse(est.horaApertura.split(':')[0]) * 60 + int.parse(est.horaApertura.split(':')[1]);
+            int minCierre = int.parse(est.horaCierre.split(':')[0]) * 60 + int.parse(est.horaCierre.split(':')[1]);
+
+            if (minEntrada < minApertura || minSalida > minCierre) {
+              fueraDeHorario = true;
+            }
+          }
+
+          // Esta variable controla si el botón se puede presionar
+          bool botonBloqueado = horaPasada || fueraDeHorario;
           double total = 5.0 + (est.precioHora * horas);
+
           return AlertDialog(
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
             title: Text("Reserva Cajón C${index + 1}"),
@@ -1590,7 +1666,20 @@ class _ParkingSlotItemState extends State<ParkingSlotItem> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  // --- SELECTOR DE VEHÍCULO CORREGIDO ---
+                  // 1. Mensaje de error visual (Opcional pero recomendado)
+                  if (fueraDeHorario)
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      margin: const EdgeInsets.only(bottom: 10),
+                      decoration: BoxDecoration(color: Colors.red.shade100, borderRadius: BorderRadius.circular(10)),
+                      child: Text(
+                        "🚫 Horario no disponible\nCierre: ${est.horaCierre.substring(0,5)}",
+                        style: const TextStyle(color: Colors.red, fontWeight: FontWeight.bold, fontSize: 12),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+
+                  // Selector de vehículo
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 12),
                     decoration: BoxDecoration(
@@ -1599,10 +1688,9 @@ class _ParkingSlotItemState extends State<ParkingSlotItem> {
                         border: Border.all(color: Colors.grey.shade300)
                     ),
                     child: DropdownButtonHideUnderline(
-                      child: DropdownButton<String>( // Cambiado a String para manejar el ID
+                      child: DropdownButton<String>(
                         isExpanded: true,
                         hint: const Text("Seleccionar vehículo (Opcional)"),
-                        // Usamos el ID almacenado en la variable (convertido a String para el Dropdown)
                         value: (vehiculoSeleccionado is Map)
                             ? vehiculoSeleccionado['id_vehiculo'].toString()
                             : vehiculoSeleccionado?.toString(),
@@ -1619,7 +1707,7 @@ class _ParkingSlotItemState extends State<ParkingSlotItem> {
                           ),
                           ...misVehiculosParaReserva.map((v) {
                             return DropdownMenuItem<String>(
-                              value: v['id_vehiculo'].toString(), // El valor es el ID como String
+                              value: v['id_vehiculo'].toString(),
                               child: Text("${v['modelo']} (${v['placa']})"),
                             );
                           }).toList(),
@@ -1642,11 +1730,23 @@ class _ParkingSlotItemState extends State<ParkingSlotItem> {
                     decoration: const InputDecoration(labelText: "Nombre para tu reserva", prefixIcon: Icon(Icons.edit)),
                   ),
                   const SizedBox(height: 10),
-                  ListTile(
-                    leading: const Icon(Icons.access_time, color: Color(0xFF166088)),
-                    title: Text(llegadaProgramada),
-                    onTap: () => _seleccionarHoraLlegada(context, setDialogState),
+
+                  // Selector de Horario con Etiqueta Superior
+                  InputDecorator(
+                    decoration: const InputDecoration(
+                      labelText: "Seleccionar horario",
+                      border: InputBorder.none,
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                    child: ListTile(
+                      leading: const Icon(Icons.access_time, color: Color(0xFF166088)),
+                      title: Text(llegadaProgramada == "INVÁLIDA"
+                          ? "⚠️ Hora no válida (Toca aquí)"
+                          : llegadaProgramada.substring(11, 16)),
+                      onTap: () => _seleccionarHoraLlegada(context, setDialogState),
+                    ),
                   ),
+
                   const Divider(),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,
@@ -1665,16 +1765,15 @@ class _ParkingSlotItemState extends State<ParkingSlotItem> {
             actions: [
               TextButton(onPressed: () => Navigator.pop(context), child: const Text("Cancelar")),
               ElevatedButton(
-                onPressed: () {
+                // BOTÓN BLOQUEADO SI LA HORA ES INVÁLIDA O EXCEDE EL CIERRE
+                onPressed: botonBloqueado ? null : () {
                   if (metodo == "Saldo" && double.parse(homeState.saldo) < total) {
                     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Saldo insuficiente")));
                     return;
                   }
 
-                  // LÓGICA DE ENVÍO CORREGIDA
                   String idVehiculoAEnviar = "null";
                   if (vehiculoSeleccionado != null && vehiculoSeleccionado != "agregar") {
-                    // Si es un mapa (por registros viejos) extraemos el ID, si no, es el ID directamente
                     idVehiculoAEnviar = (vehiculoSeleccionado is Map)
                         ? vehiculoSeleccionado['id_vehiculo'].toString()
                         : vehiculoSeleccionado.toString();
@@ -1692,6 +1791,9 @@ class _ParkingSlotItemState extends State<ParkingSlotItem> {
                       idVehiculoAEnviar
                   );
                 },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: botonBloqueado ? Colors.grey : null,
+                ),
                 child: const Text("Confirmar Pago"),
               )
             ],
@@ -1701,6 +1803,10 @@ class _ParkingSlotItemState extends State<ParkingSlotItem> {
     );
   }
 
+
+
+
+// ... aquí sigue el resto de tu clase ...
   void _procesarPago(int index, Estacionamiento est, int horas, double monto, String metodo, String nombreR, String idVehiculo) async {
     final homeState = context.findAncestorStateOfType<_HomePageState>();
     try {
