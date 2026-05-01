@@ -1000,7 +1000,15 @@ class _HomePageState extends State<HomePage>with SingleTickerProviderStateMixin 
             child: Column(
               children: [
                 Text(r.nombre, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF166088))),
-                const SizedBox(height: 5),
+                const SizedBox(height: 8),
+                Text(
+                  _formatearFechaVisual(r.horaLlegada),
+                  style: TextStyle(
+                    color: Colors.blueGrey.shade700,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
+                  ),
+                ),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
@@ -1136,6 +1144,41 @@ class _HomePageState extends State<HomePage>with SingleTickerProviderStateMixin 
       }
     } catch (e) {
       debugPrint("Error al compartir: $e");
+    }
+  }
+
+  // Busca el final de tu clase _HomePageState y pega esto:
+
+  String _formatearFechaVisual(String fechaRaw) {
+    try {
+      // Si la fecha viene como "INVÁLIDA" o está vacía, evitamos el error
+      if (fechaRaw == "INVÁLIDA" || fechaRaw.isEmpty) return "Fecha no definida";
+
+      DateTime fecha = DateTime.parse(fechaRaw);
+      DateTime ahora = DateTime.now();
+
+      // Comparar si es hoy (mismo año, mes y día)
+      if (fecha.year == ahora.year && fecha.month == ahora.month && fecha.day == ahora.day) {
+        return "HOY";
+      }
+
+      // Comparar si es mañana
+      DateTime manana = ahora.add(const Duration(days: 1));
+      if (fecha.year == manana.year && fecha.month == manana.month && fecha.day == manana.day) {
+        return "MAÑANA";
+      }
+
+      // Si es otro día, formatear: Ej. Lun, 05 de May
+      List<String> diasSemana = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"];
+      List<String> meses = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
+
+      // weekday va de 1 (lunes) a 7 (domingo)
+      String nombreDia = diasSemana[fecha.weekday % 7];
+      String nombreMes = meses[fecha.month - 1];
+
+      return "$nombreDia, ${fecha.day} de $nombreMes";
+    } catch (e) {
+      return "Fecha programada"; // Fallback en caso de error de parseo
     }
   }
 }
@@ -1312,6 +1355,17 @@ class _ParkingSlotItemState extends State<ParkingSlotItem> {
                             borderRadius: BorderRadius.circular(12)),
                         child: Column(
                           children: [
+                            if (!estaActiva) ...[
+                              Text(
+                                _formatearFechaVisual(reservaEncontrada!.horaLlegada),
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  color: Colors.blueGrey.shade700,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                            ],
                             Text(
                               estaActiva ? "TIEMPO RESTANTE" : "LLEGADA ESTIMADA",
                               style: TextStyle(
@@ -1510,36 +1564,64 @@ class _ParkingSlotItemState extends State<ParkingSlotItem> {
     );
   }
 
+  String _formatearFechaVisual(String fechaRaw) {
+    try {
+      DateTime fecha = DateTime.parse(fechaRaw);
+      DateTime ahora = DateTime.now();
+
+      if (fecha.year == ahora.year && fecha.month == ahora.month && fecha.day == ahora.day) {
+        return "HOY";
+      }
+
+      DateTime manana = ahora.add(const Duration(days: 1));
+      if (fecha.year == manana.year && fecha.month == manana.month && fecha.day == manana.day) {
+        return "MAÑANA";
+      }
+
+      List<String> meses = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
+      List<String> dias = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"];
+
+      return "${dias[fecha.weekday % 7]}, ${fecha.day} de ${meses[fecha.month - 1]}";
+    } catch (e) {
+      return "Fecha seleccionada";
+    }
+  }
+
   Future<void> _seleccionarHoraLlegada(BuildContext context, StateSetter setDialogState) async {
     final DateTime ahora = DateTime.now();
 
+    // 1. Elegir el día
+    final DateTime? fechaSeleccionada = await showDatePicker(
+      context: context,
+      initialDate: ahora,
+      firstDate: ahora,
+      lastDate: ahora.add(const Duration(days: 30)),
+      helpText: "DÍA DE LLEGADA",
+    );
+
+    if (fechaSeleccionada == null) return;
+
+    // 2. Elegir la hora
     final TimeOfDay? horaSeleccionada = await showTimePicker(
       context: context,
-      initialTime: TimeOfDay.now(),
-      initialEntryMode: TimePickerEntryMode.dial,
-      helpText: "INGRESA HORA DE LLEGADA",
-      builder: (context, child) {
-        return MediaQuery(
-          data: MediaQuery.of(context).copyWith(alwaysUse24HourFormat: false),
-          child: child!,
-        );
-      },
+      initialTime: TimeOfDay.fromDateTime(ahora),
+      helpText: "HORA DE LLEGADA",
     );
 
     if (horaSeleccionada == null) return;
 
+    // 3. Combinar
     DateTime fechaFinal = DateTime(
-      ahora.year, ahora.month, ahora.day,
+      fechaSeleccionada.year, fechaSeleccionada.month, fechaSeleccionada.day,
       horaSeleccionada.hour, horaSeleccionada.minute,
     );
 
+    // Validar si es una hora que ya pasó (si eligió el día de hoy)
     if (fechaFinal.isBefore(ahora.subtract(const Duration(minutes: 1)))) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("❌ Esta hora ya pasó"), backgroundColor: Colors.red),
+        const SnackBar(content: Text("❌ Hora inválida (ya pasó)"), backgroundColor: Colors.red),
       );
-      setDialogState(() {
-        llegadaProgramada = "INVÁLIDA";
-      });
+      setDialogState(() => llegadaProgramada = "INVÁLIDA");
       return;
     }
 
@@ -1547,6 +1629,7 @@ class _ParkingSlotItemState extends State<ParkingSlotItem> {
       llegadaProgramada = fechaFinal.toString().substring(0, 19);
     });
   }
+
 
   Future<void> _cargarVehiculosUsuario() async {
     final homeState = context.findAncestorStateOfType<_HomePageState>();
@@ -1566,6 +1649,18 @@ class _ParkingSlotItemState extends State<ParkingSlotItem> {
   }
 
   void _confirmarReserva(int index) async {
+    showDialog(
+      context: context,
+      barrierDismissible: false, // Evita que lo cierren tocando fuera
+      builder: (BuildContext context) {
+        return const Center(
+          child: CircularProgressIndicator(
+            valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF166088)),
+          ),
+        );
+      },
+    );
+
     await _cargarVehiculosUsuario();
     final homeState = context.findAncestorStateOfType<_HomePageState>();
     if (homeState == null) return;
@@ -1578,6 +1673,8 @@ class _ParkingSlotItemState extends State<ParkingSlotItem> {
       final checkRes = await http.get(Uri.parse(
           'https://carlossalinas.webpro1213.com/api/check_disponibilidad.php?id_espacio=${ParkingState.idsReales[index]}'
       )).timeout(const Duration(seconds: 5));
+
+      if (Navigator.canPop(context)) Navigator.pop(context);
 
       if (checkRes.statusCode == 200) {
         final data = json.decode(checkRes.body);
@@ -1602,6 +1699,7 @@ class _ParkingSlotItemState extends State<ParkingSlotItem> {
         }
       }
     } catch (e) {
+      if (Navigator.canPop(context)) Navigator.pop(context);
       debugPrint("Error en check preventivo: $e");
     }
 
@@ -1726,18 +1824,19 @@ class _ParkingSlotItemState extends State<ParkingSlotItem> {
                   ),
                   const SizedBox(height: 10),
 
-                  // Selector de Horario con Etiqueta Superior
                   InputDecorator(
-                    decoration: const InputDecoration(
-                      labelText: "Seleccionar horario",
-                      border: InputBorder.none,
-                      contentPadding: EdgeInsets.zero,
-                    ),
+                    decoration: const InputDecoration(labelText: "Día y hora de llegada", border: InputBorder.none),
                     child: ListTile(
-                      leading: const Icon(Icons.access_time, color: Color(0xFF166088)),
-                      title: Text(llegadaProgramada == "INVÁLIDA"
-                          ? "⚠️ Hora no válida (Toca aquí)"
-                          : llegadaProgramada.substring(11, 16)),
+                      leading: const Icon(Icons.calendar_today, color: Color(0xFF166088)),
+                      title: Text(
+                        llegadaProgramada == "INVÁLIDA"
+                            ? "Toca para elegir"
+                            : _formatearFechaVisual(llegadaProgramada),
+                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                      ),
+                      subtitle: llegadaProgramada == "INVÁLIDA"
+                          ? null
+                          : Text("A las ${llegadaProgramada.substring(11, 16)} hrs"),
                       onTap: () => _seleccionarHoraLlegada(context, setDialogState),
                     ),
                   ),
