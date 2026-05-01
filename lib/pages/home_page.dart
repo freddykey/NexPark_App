@@ -842,12 +842,7 @@ class _HomePageState extends State<HomePage>with SingleTickerProviderStateMixin 
             },
           ),
           const Spacer(),
-          ListTile(
-            leading: const Icon(Icons.airplane_ticket, color: Color(0xFF166088)),
-            title: const Text("Ticket"),
-            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const TicketPage())),
-          ),
-          const Spacer(),
+
           const Divider(indent: 20, endIndent: 20),
           ListTile(
             leading: const Icon(Icons.logout, color: Colors.red),
