@@ -58,8 +58,11 @@ class _RecargaPageState extends State<RecargaPage> {
   }
 
   Future<void> iniciarPago() async {
-    if (montoController.text.isEmpty || double.parse(montoController.text) <= 0) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Ingresa un monto válido")));
+    // Validación de monto mínimo (Stripe requiere al menos $10 MXN)
+    if (montoController.text.isEmpty || double.parse(montoController.text) < 10) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("El monto mínimo de recarga es \$10 MXN"))
+      );
       return;
     }
 
@@ -68,20 +71,24 @@ class _RecargaPageState extends State<RecargaPage> {
     int idUsuario = prefs.getInt('id_usuario') ?? 0;
 
     try {
+      // APUNTANDO AL NUEVO BACKEND DE STRIPE
       var response = await http.post(
-        Uri.parse('https://carlossalinas.webpro1213.com/api/crear_preferencia.php'),
+        Uri.parse('https://carlossalinas.webpro1213.com/api/crear_preferencia_stripe.php'),
         body: {
           'id_usuario': idUsuario.toString(),
           'monto': montoController.text,
-          'tipo_flujo': 'recarga', // <--- ESTA LÍNEA ES LA CLAVE
-
+          'tipo_flujo': 'recarga',
+          'id_espacio': '0',
+          'nombre_reserva': 'Recarga de Saldo NexPark',
         },
       );
 
       var res = json.decode(response.body);
+
       if (res['status'] == 'success') {
         if (!mounted) return;
 
+        // Abrimos el WebView con la URL que nos devolvió Stripe
         final resultado = await Navigator.push(
           context,
           MaterialPageRoute(
@@ -89,19 +96,30 @@ class _RecargaPageState extends State<RecargaPage> {
           ),
         );
 
+        // Si el WebView regresa "success", mostramos confirmación
         if (resultado == "success") {
+          montoController.clear();
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text("¡Recarga procesada! Tu saldo se actualizará en breve."), backgroundColor: Colors.green),
+            const SnackBar(
+              content: Text("¡Pago procesado con éxito! Tu saldo se actualizará."),
+              backgroundColor: Colors.green,
+            ),
           );
         }
+      } else {
+        // Error devuelto por el PHP o Stripe
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text("Error: ${res['message']}"))
+        );
       }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Error al conectar con la pasarela")));
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Error al conectar con el servidor de pagos"))
+      );
     } finally {
       setState(() => cargando = false);
     }
   }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(

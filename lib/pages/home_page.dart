@@ -407,8 +407,8 @@ class _HomePageState extends State<HomePage>with SingleTickerProviderStateMixin 
                   onChanged: (v) => setDialogState(() => metodo = v!),
                 ),
                 RadioListTile(
-                  title: const Text("Mercado Pago"),
-                  value: "Mercado Pago",
+                  title: const Text("Stripe"),
+                  value: "Stripe",
                   groupValue: metodo,
                   onChanged: (v) => setDialogState(() => metodo = v!),
                 ),
@@ -503,30 +503,68 @@ class _HomePageState extends State<HomePage>with SingleTickerProviderStateMixin 
   }
 
   Future<void> _ejecutarCancelacionEnServidor(String token) async {
-    try {
+    // 1. Mostrar pantalla de carga para bloquear la UI mientras se procesa todo
+    showDialog(
+      context: context,
+      barrierDismissible: false, // Impide que el usuario lo quite tocando fuera
+      builder: (context) => const Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CircularProgressIndicator(color: Color(0xFF166088)),
+            SizedBox(height: 15),
+            Text(
+                "Cancelando y liberando espacio...",
+                style: TextStyle(color: Colors.white, decoration: TextDecoration.none, fontSize: 16)
+            ),
+          ],
+        ),
+      ),
+    );
 
+    try {
       final response = await http.post(
         Uri.parse('https://carlossalinas.webpro1213.com/api/cancelar_reserva.php'),
-        body: {'token_qr': token},
+        body: {
+          'token_qr': token,
+          'id_usuario': idUsuario.toString(), // Usamos id_usuario según el Ledger
+        },
       );
 
       final res = json.decode(response.body);
+
       if (res['status'] == 'success') {
+        // 2. ACTUALIZACIÓN CRÍTICA: Esperamos a que todas las fuentes se refresquen
+        // Esto asegura que al quitar la carga, el mapa ya esté verde.
+        await Future.wait([
+          _obtenerReservas(),               // Quita la reserva de la lista
+          _cargarDatosUsuarioServidor(),     // Refresca el saldo (por el reembolso)
+          _actualizarEstadoDesdeServidor(), // ESTA es la que libera el cajón en el mapa
+        ]);
+
+        if (mounted) Navigator.pop(context); // Quitar carga
+
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(res['message']), backgroundColor: Colors.green),
         );
-        _obtenerReservas();
-        _cargarDatosUsuarioServidor();
+
+        // Opcional: Mover al usuario al mapa para que vea el cajón libre
+        _tabController.animateTo(0);
+
       } else {
+        if (mounted) Navigator.pop(context);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(res['message']), backgroundColor: Colors.red),
         );
       }
     } catch (e) {
+      if (mounted) Navigator.pop(context);
       debugPrint("Error al cancelar: $e");
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Error de red al intentar cancelar"), backgroundColor: Colors.red),
+      );
     }
   }
-
 
   Future<void> _actualizarEstadoDesdeServidor() async {
     if (seleccionado == null) return;
@@ -1851,7 +1889,12 @@ class _ParkingSlotItemState extends State<ParkingSlotItem> {
                     ],
                   ),
                   RadioListTile(title: const Text("Saldo NexPark"), value: "Saldo", groupValue: metodo, onChanged: (v) => setDialogState(() => metodo = v!)),
-                  RadioListTile(title: const Text("Mercado Pago"), value: "Mercado Pago", groupValue: metodo, onChanged: (v) => setDialogState(() => metodo = v!)),
+                  RadioListTile(
+                      title: const Text("Stripe"), // Texto visual cambiado
+                      value: "Stripe",             // El valor que se guardará en la variable 'metodo'
+                      groupValue: metodo,
+                      onChanged: (v) => setDialogState(() => metodo = v!)
+                  ),
                   Text("Total: \$${total.toStringAsFixed(2)}", style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.green)),
                 ],
               ),
@@ -1906,7 +1949,7 @@ class _ParkingSlotItemState extends State<ParkingSlotItem> {
     try {
       final url = (metodo == "Saldo")
           ? 'https://carlossalinas.webpro1213.com/api/crear_reserva.php'
-          : 'https://carlossalinas.webpro1213.com/api/crear_preferencia.php';
+          : 'https://carlossalinas.webpro1213.com/api/crear_preferencia_stripe.php';
 
       final response = await http.post(
         Uri.parse(url),
@@ -1919,6 +1962,8 @@ class _ParkingSlotItemState extends State<ParkingSlotItem> {
           'horas': horas.toString(),
           'nombre_reserva': nombreR,
           'id_vehiculo': idVehiculo,
+          // AGREGA ESTA LÍNEA PARA QUE EL PHP SEPA QUÉ HACER
+          'tipo_operacion': (metodo == "Stripe") ? 'pago_reserva' : 'reserva_directa',
         },
       );
 
@@ -1940,11 +1985,47 @@ class _ParkingSlotItemState extends State<ParkingSlotItem> {
           }
         } else {
 
-          final result = await Navigator.push(context, MaterialPageRoute(builder: (_) => PagoWebView(url: res['url_pago'])));
+          final result = await Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => PagoWebView(url: res['url_pago']))
+          );
+
           if (result == "success") {
-            homeState._cargarDatosUsuarioServidor();
-            homeState._obtenerReservas();
-            homeState._tabController.animateTo(2);
+            // 1. Forzamos la creación de la reserva en el servidor usando el saldo que Stripe acaba de subir
+            final responseReserva = await http.post(
+              Uri.parse('https://carlossalinas.webpro1213.com/api/crear_reserva.php'),
+              body: {
+                'id_usuario': homeState.idUsuario.toString(), // Usamos id_usuario según la corrección
+                'id_espacio': ParkingState.idsReales[index].toString(),
+                'monto': monto.toString(),
+                'hora_llegada_estimada': llegadaProgramada.substring(0, 19),
+                'metodo': 'Saldo',
+                'horas': horas.toString(),
+                'nombre_reserva': nombreR,
+                'id_vehiculo': idVehiculo,
+              },
+            );
+
+            final resReserva = json.decode(responseReserva.body);
+
+            if (resReserva['status'] == 'success') {
+              // 2. PEQUEÑA PAUSA TÉCNICA: Damos 1 segundo para que la DB se estabilice
+              await Future.delayed(const Duration(seconds: 1));
+
+              // 3. ACTUALIZACIÓN MASIVA: Refrescamos saldo, reservas (para el QR) y mapa en paralelo
+              await Future.wait([
+                homeState._cargarDatosUsuarioServidor(),
+                homeState._obtenerReservas(), // ESTO es lo que carga el QR rápido
+                homeState._actualizarEstadoDesdeServidor(),
+              ]);
+
+              // 4. Movemos a la pestaña de QR (índice 2)
+              homeState._tabController.animateTo(2);
+
+              _mostrarAlertaExito("¡Reserva Lista!", "Tu QR ya está disponible.");
+            } else {
+              _mostrarAlertaError("Error", "El pago se hizo pero no pudimos apartar el lugar: ${resReserva['message']}");
+            }
           }
         }
       } else {
