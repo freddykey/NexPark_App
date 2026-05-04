@@ -7,6 +7,7 @@ import 'home_page.dart';
 import 'user_account.dart';
 import 'login_page.dart';
 import 'pago_webview.dart';
+import 'mis_vehiculos.dart';
 
 class RecargaPage extends StatefulWidget {
   const RecargaPage({super.key});
@@ -150,6 +151,14 @@ class _RecargaPageState extends State<RecargaPage> {
             ListTile(leading: const Icon(Icons.home, color: Color(0xFF166088)), title: const Text("Inicio"), onTap: () => Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const HomePage()))),
             ListTile(leading: const Icon(Icons.person, color: Color(0xFF166088)), title: const Text("Cuenta"), onTap: () => Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const UserAccount()))),
             ListTile(leading: const Icon(Icons.add_card, color: Color(0xFF166088)), title: const Text("Recargar Saldo"), onTap: () => Navigator.pop(context)),
+            ListTile(
+              leading: const Icon(Icons.directions_car, color: Color(0xFF166088)),
+              title: const Text("Mis Vehículos"),
+              onTap: () {
+                Navigator.pop(context); // Cierra el drawer
+                Navigator.push(context, MaterialPageRoute(builder: (_) => const MisVehiculos()));
+              },
+            ),
             const Spacer(),
             const Divider(indent: 20, endIndent: 20),
             ListTile(leading: const Icon(Icons.logout_rounded, color: Color(0xFFEB5757)), title: const Text("Cerrar sesión", style: TextStyle(color: Color(0xFFEB5757), fontWeight: FontWeight.bold),), onTap: _logout,),

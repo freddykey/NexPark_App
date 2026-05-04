@@ -63,6 +63,7 @@ class ReservaActiva {
   final int horasPagadas;
   final int idEstacionamiento;
   final String estado;
+  final String token_qr;
 
 
   ReservaActiva({
@@ -73,6 +74,7 @@ class ReservaActiva {
     required this.horasPagadas,
     required this.idEstacionamiento,
     required this.estado,
+    required this.token_qr,
   });
 
   factory ReservaActiva.fromJson(Map<String, dynamic> json) {
@@ -85,6 +87,7 @@ class ReservaActiva {
       horasPagadas: int.tryParse(json['horas_pagadas']?.toString() ?? '1') ?? 1,
       idEstacionamiento: int.parse(json['id_estacionamiento']?.toString() ?? '0'),
       estado: json['estado']?.toString() ?? 'programada',
+      token_qr: json['token_qr'] ?? '',
     );
   }
 }
@@ -125,7 +128,7 @@ class ParkingState {
       'NexPark Alerts',
       importance: Importance.max,
       priority: Priority.high,
-      icon: 'launcher_icon', // <--- AGREGA ESTA LÍNEA (asegúrate que se llame igual que en tu AndroidManifest)
+      icon: 'launcher_icon',
     );
     await notifications.show(
         0,
@@ -164,6 +167,7 @@ class _HomePageState extends State<HomePage>with SingleTickerProviderStateMixin 
   List<Estacionamiento> misEstacionamientos = [];
   bool cargando = true;
   bool cambiandoSucursal = false;
+  bool alertaMostrada = false;
   late TabController _tabController;
 
   final ScreenshotController screenshotController = ScreenshotController();
@@ -177,8 +181,11 @@ class _HomePageState extends State<HomePage>with SingleTickerProviderStateMixin 
     _tabController = TabController(length: 3, vsync: this);
     ParkingState.initNotificaciones();
     _inicializarApp();
-    _timerConsulta = Timer.periodic(const Duration(seconds: 10), (timer) {
-      if (mounted && seleccionado != null) _actualizarEstadoDesdeServidor();
+    _timerConsulta = Timer.periodic(const Duration(seconds: 5), (timer) {
+      if (mounted) {
+        _cargarDatosUsuarioServidor(); // <--- Llama a tu función de saldo
+        if (seleccionado != null) _actualizarEstadoDesdeServidor();
+      }
     });
 
 
@@ -227,16 +234,16 @@ class _HomePageState extends State<HomePage>with SingleTickerProviderStateMixin 
 
   Future<void> _compartirQRCompleto(String token, String espacio) async {
     try {
-      // Captura el widget que esté envuelto en Screenshot()
+
       final image = await screenshotController.capture();
 
       if (image != null) {
-        // Obtener directorio temporal para guardar la imagen
+
         final directory = await getTemporaryDirectory();
         final imagePath = await File('${directory.path}/qr_nexpark.png').create();
         await imagePath.writeAsBytes(image);
 
-        // Compartir archivo + texto descriptivo
+
         await Share.shareXFiles(
           [XFile(imagePath.path)],
           text: '🔑 *Acceso NexPark*\n'
@@ -503,7 +510,7 @@ class _HomePageState extends State<HomePage>with SingleTickerProviderStateMixin 
   }
 
   Future<void> _ejecutarCancelacionEnServidor(String token) async {
-    // 1. Mostrar pantalla de carga para bloquear la UI mientras se procesa todo
+
     showDialog(
       context: context,
       barrierDismissible: false, // Impide que el usuario lo quite tocando fuera
@@ -527,22 +534,21 @@ class _HomePageState extends State<HomePage>with SingleTickerProviderStateMixin 
         Uri.parse('https://carlossalinas.webpro1213.com/api/cancelar_reserva.php'),
         body: {
           'token_qr': token,
-          'id_usuario': idUsuario.toString(), // Usamos id_usuario según el Ledger
+          'id_usuario': idUsuario.toString(),
         },
       );
 
       final res = json.decode(response.body);
 
       if (res['status'] == 'success') {
-        // 2. ACTUALIZACIÓN CRÍTICA: Esperamos a que todas las fuentes se refresquen
-        // Esto asegura que al quitar la carga, el mapa ya esté verde.
+
         await Future.wait([
-          _obtenerReservas(),               // Quita la reserva de la lista
-          _cargarDatosUsuarioServidor(),     // Refresca el saldo (por el reembolso)
-          _actualizarEstadoDesdeServidor(), // ESTA es la que libera el cajón en el mapa
+          _obtenerReservas(),
+          _cargarDatosUsuarioServidor(),
+          _actualizarEstadoDesdeServidor(),
         ]);
 
-        if (mounted) Navigator.pop(context); // Quitar carga
+        if (mounted) Navigator.pop(context);
 
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(res['message']), backgroundColor: Colors.green),
@@ -677,6 +683,50 @@ class _HomePageState extends State<HomePage>with SingleTickerProviderStateMixin 
         }
       }
     } catch (e) { print("Error: $e"); }
+  }
+
+  Future<void> _simularSalidaQR(String token) async {
+    try {
+      // Mostramos un indicador de carga opcional si lo deseas
+      final response = await http.post(
+        Uri.parse('https://carlossalinas.webpro1213.com/api/validar_salida.php'),
+        body: {'token_qr': token},
+      );
+
+      if (response.body.isNotEmpty) {
+        final res = json.decode(response.body);
+
+        if (res['status'] == 'success') {
+          // 1. Actualizamos el mapa para que el cajón pase a verde/libre
+          await _actualizarEstadoDesdeServidor();
+
+          // 2. Refrescamos la lista de reservas para que desaparezca la estrella amarilla
+          _obtenerReservas();
+
+          // 3. Mostramos el mensaje (incluirá info de la multa si hubo una)
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(res['message']),
+              backgroundColor: res['multa'] > 0 ? Colors.redAccent : Colors.blueAccent,
+              duration: const Duration(seconds: 5),
+            ),
+          );
+        } else {
+          // Error (ej. la reserva no estaba activa o el token falló)
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text("Error: ${res['message']}"),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      print("Error en salida: $e");
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Error de conexión al procesar salida")),
+      );
+    }
   }
 
   Future<void> _cargarDatosUsuarioServidor() async {
@@ -1130,11 +1180,43 @@ class _HomePageState extends State<HomePage>with SingleTickerProviderStateMixin 
                 const SizedBox(height: 12),
 
                 // BOTONES DE ACCIÓN RESTANTES
+                SizedBox(
+                  width: double.infinity,
+                  height: 48,
+                  child: ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(backgroundColor: Colors.orange, foregroundColor: Colors.white),
+                    onPressed: () => _simularEntradaQR(r.token),
+                    icon: const Icon(Icons.check_circle),
+                    label: const Text("SIMULAR ENTRADA"),
+                  ),
+                ),
 
+                const SizedBox(height: 12),
+                // 2. BOTÓN DE SALIDA (Solo si está 'activo')
+                if (r.estado.toLowerCase() == 'activo') ...[
+                  SizedBox(
+                    width: double.infinity,
+                    height: 48,
+                    child: ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.orange.shade900, // Color fuerte para advertir salida
+                        foregroundColor: Colors.white,
+                      ),
+                      onPressed: () {
+                        Navigator.pop(context);
+                        _simularSalidaQR(r.token_qr); // Función que llama a validar_salida.php
+                      },
+                      icon: const Icon(Icons.logout),
+                      label: const Text("REGISTRAR SALIDA / LIBERAR", style: TextStyle(fontWeight: FontWeight.bold)),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                ],
 
                 SizedBox(
                   width: double.infinity,
                   height: 48,
+
                   child: ElevatedButton.icon(
                     style: ElevatedButton.styleFrom(backgroundColor: Colors.blue.shade700, foregroundColor: Colors.white),
                     onPressed: () => _mostrarDialogoExtender(r),
@@ -1219,6 +1301,8 @@ class _HomePageState extends State<HomePage>with SingleTickerProviderStateMixin 
       return "Fecha programada"; // Fallback en caso de error de parseo
     }
   }
+
+
 }
 
 
@@ -1687,257 +1771,293 @@ class _ParkingSlotItemState extends State<ParkingSlotItem> {
   }
 
   void _confirmarReserva(int index) async {
+    // 1. Mostramos el loading inicial para cargar datos del servidor
     showDialog(
       context: context,
-      barrierDismissible: false, // Evita que lo cierren tocando fuera
-      builder: (BuildContext context) {
-        return const Center(
-          child: CircularProgressIndicator(
-            valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF166088)),
-          ),
-        );
-      },
-    );
-
-    await _cargarVehiculosUsuario();
-    final homeState = context.findAncestorStateOfType<_HomePageState>();
-    if (homeState == null) return;
-
-    final est = homeState.seleccionado!;
-    final TextEditingController nombreController = TextEditingController(text: "Reserva C${index + 1}");
-
-    // 1. CHECK DE DISPONIBILIDAD FUTURA (Tu lógica existente)
-    try {
-      final checkRes = await http.get(Uri.parse(
-          'https://carlossalinas.webpro1213.com/api/check_disponibilidad.php?id_espacio=${ParkingState.idsReales[index]}'
-      )).timeout(const Duration(seconds: 5));
-
-      if (Navigator.canPop(context)) Navigator.pop(context);
-
-      if (checkRes.statusCode == 200) {
-        final data = json.decode(checkRes.body);
-        if (data['status'] == 'busy_future') {
-          DateTime proxima = DateTime.parse(data['proxima_reserva']);
-          DateTime limiteReal = proxima.subtract(const Duration(minutes: 15));
-          String horaFormateada = "${proxima.hour.toString().padLeft(2, '0')}:${proxima.minute.toString().padLeft(2, '0')}";
-
-          bool? continuar = await showDialog<bool>(
-            context: context,
-            builder: (context) => AlertDialog(
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-              title: const Text("⚠️ ¡Aviso de tiempo!"),
-              content: Text("Este cajón tiene una reserva a las $horaFormateada.\n\nDebes terminar antes de las ${limiteReal.hour}:${limiteReal.minute.toString().padLeft(2, '0')}.\n¿Continuar?"),
-              actions: [
-                TextButton(onPressed: () => Navigator.pop(context, false), child: const Text("VOLVER")),
-                ElevatedButton(onPressed: () => Navigator.pop(context, true), child: const Text("SÍ, ENTIENDO")),
-              ],
-            ),
-          );
-          if (continuar != true) return;
-        }
-      }
-    } catch (e) {
-      if (Navigator.canPop(context)) Navigator.pop(context);
-      debugPrint("Error en check preventivo: $e");
-    }
-
-    // 2. VALIDACIONES DE TIPO DE CAJÓN (Tu lógica existente)
-    if (ParkingState.esDiscapacitado[index]) {
-      bool? continuar = await showDialog<bool>(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: const Text("Espacio Azul"),
-          content: const Text("Este espacio es exclusivo para personas con discapacidad. ¿Continuar?"),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(context, false), child: const Text("NO")),
-            ElevatedButton(onPressed: () => Navigator.pop(context, true), child: const Text("SÍ")),
-          ],
+      barrierDismissible: false,
+      builder: (BuildContext context) => const Center(
+        child: CircularProgressIndicator(
+          valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF166088)),
         ),
-      );
-      if (continuar != true) return;
-    }
-
-    // 3. DIÁLOGO DE CONFIGURACIÓN CON BLOQUEOS
-    int horas = 1;
-    String metodo = "Saldo";
-
-    showDialog(
-      context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) {
-
-          // >>> AQUÍ AGREGAS LA LÓGICA DE VALIDACIÓN <<<
-          bool horaPasada = llegadaProgramada == "INVÁLIDA";
-          bool fueraDeHorario = false;
-
-          if (!horaPasada) {
-            DateTime entrada = DateTime.parse(llegadaProgramada);
-            DateTime salida = entrada.add(Duration(hours: horas));
-
-            int minEntrada = entrada.hour * 60 + entrada.minute;
-            int minSalida = salida.hour * 60 + salida.minute;
-
-            // Usamos 'est' que ya lo tienes definido unas líneas arriba en tu función
-            int minApertura = int.parse(est.horaApertura.split(':')[0]) * 60 + int.parse(est.horaApertura.split(':')[1]);
-            int minCierre = int.parse(est.horaCierre.split(':')[0]) * 60 + int.parse(est.horaCierre.split(':')[1]);
-
-            if (minEntrada < minApertura || minSalida > minCierre) {
-              fueraDeHorario = true;
-            }
-          }
-
-          // Esta variable controla si el botón se puede presionar
-          bool botonBloqueado = horaPasada || fueraDeHorario;
-          double total = 5.0 + (est.precioHora * horas);
-
-          return AlertDialog(
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-            title: Text("Reserva Cajón C${index + 1}"),
-            content: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  // 1. Mensaje de error visual (Opcional pero recomendado)
-                  if (fueraDeHorario)
-                    Container(
-                      padding: const EdgeInsets.all(8),
-                      margin: const EdgeInsets.only(bottom: 10),
-                      decoration: BoxDecoration(color: Colors.red.shade100, borderRadius: BorderRadius.circular(10)),
-                      child: Text(
-                        "🚫 Horario no disponible\nCierre: ${est.horaCierre.substring(0,5)}",
-                        style: const TextStyle(color: Colors.red, fontWeight: FontWeight.bold, fontSize: 12),
-                        textAlign: TextAlign.center,
-                      ),
-                    ),
-
-                  // Selector de vehículo
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12),
-                    decoration: BoxDecoration(
-                        color: Colors.grey.shade100,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: Colors.grey.shade300)
-                    ),
-                    child: DropdownButtonHideUnderline(
-                      child: DropdownButton<String>(
-                        isExpanded: true,
-                        hint: const Text("Seleccionar vehículo (Opcional)"),
-                        value: (vehiculoSeleccionado is Map)
-                            ? vehiculoSeleccionado['id_vehiculo'].toString()
-                            : vehiculoSeleccionado?.toString(),
-                        items: [
-                          DropdownMenuItem(
-                            value: "agregar",
-                            child: Row(
-                              children: [
-                                Icon(Icons.add_circle, color: Colors.blue.shade700, size: 20),
-                                const SizedBox(width: 10),
-                                const Text("Agregar nuevo", style: TextStyle(color: Colors.blue, fontWeight: FontWeight.bold)),
-                              ],
-                            ),
-                          ),
-                          ...misVehiculosParaReserva.map((v) {
-                            return DropdownMenuItem<String>(
-                              value: v['id_vehiculo'].toString(),
-                              child: Text("${v['modelo']} (${v['placa']})"),
-                            );
-                          }).toList(),
-                        ],
-                        onChanged: (val) {
-                          if (val == "agregar") {
-                            Navigator.pop(context);
-                            Navigator.push(context, MaterialPageRoute(builder: (_) => const MisVehiculos()))
-                                .then((_) => _confirmarReserva(index));
-                          } else {
-                            setDialogState(() => vehiculoSeleccionado = val);
-                          }
-                        },
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 15),
-                  TextField(
-                    controller: nombreController,
-                    decoration: const InputDecoration(labelText: "Nombre para tu reserva", prefixIcon: Icon(Icons.edit)),
-                  ),
-                  const SizedBox(height: 10),
-
-                  InputDecorator(
-                    decoration: const InputDecoration(labelText: "Día y hora de llegada", border: InputBorder.none),
-                    child: ListTile(
-                      leading: const Icon(Icons.calendar_today, color: Color(0xFF166088)),
-                      title: Text(
-                        llegadaProgramada == "INVÁLIDA"
-                            ? "Toca para elegir"
-                            : _formatearFechaVisual(llegadaProgramada),
-                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
-                      ),
-                      subtitle: llegadaProgramada == "INVÁLIDA"
-                          ? null
-                          : Text("A las ${llegadaProgramada.substring(11, 16)} hrs"),
-                      onTap: () => _seleccionarHoraLlegada(context, setDialogState),
-                    ),
-                  ),
-
-                  const Divider(),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      IconButton(icon: const Icon(Icons.remove_circle), onPressed: () => setDialogState(() => horas > 1 ? horas-- : null)),
-                      Text("$horas hr(s)", style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                      IconButton(icon: const Icon(Icons.add_circle), onPressed: () => setDialogState(() => horas++)),
-                    ],
-                  ),
-                  RadioListTile(title: const Text("Saldo NexPark"), value: "Saldo", groupValue: metodo, onChanged: (v) => setDialogState(() => metodo = v!)),
-                  RadioListTile(
-                      title: const Text("Stripe"), // Texto visual cambiado
-                      value: "Stripe",             // El valor que se guardará en la variable 'metodo'
-                      groupValue: metodo,
-                      onChanged: (v) => setDialogState(() => metodo = v!)
-                  ),
-                  Text("Total: \$${total.toStringAsFixed(2)}", style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.green)),
-                ],
-              ),
-            ),
-            actions: [
-              TextButton(onPressed: () => Navigator.pop(context), child: const Text("Cancelar")),
-              ElevatedButton(
-                // BOTÓN BLOQUEADO SI LA HORA ES INVÁLIDA O EXCEDE EL CIERRE
-                onPressed: botonBloqueado ? null : () {
-                  if (metodo == "Saldo" && double.parse(homeState.saldo) < total) {
-                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Saldo insuficiente")));
-                    return;
-                  }
-
-                  String idVehiculoAEnviar = "null";
-                  if (vehiculoSeleccionado != null && vehiculoSeleccionado != "agregar") {
-                    idVehiculoAEnviar = (vehiculoSeleccionado is Map)
-                        ? vehiculoSeleccionado['id_vehiculo'].toString()
-                        : vehiculoSeleccionado.toString();
-                  }
-
-                  Navigator.pop(context);
-
-                  _procesarPago(
-                      index,
-                      est,
-                      horas,
-                      total,
-                      metodo,
-                      nombreController.text,
-                      idVehiculoAEnviar
-                  );
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: botonBloqueado ? Colors.grey : null,
-                ),
-                child: const Text("Confirmar Pago"),
-              )
-            ],
-          );
-        },
       ),
     );
+
+    try {
+      // Cargamos vehículos
+      await _cargarVehiculosUsuario();
+
+      // IMPORTANTE: Cerramos el loading inicial antes de cualquier otra interacción
+      if (Navigator.canPop(context)) Navigator.pop(context);
+
+      final homeState = context.findAncestorStateOfType<_HomePageState>();
+      if (homeState == null) return;
+
+      final est = homeState.seleccionado!;
+      final TextEditingController nombreController = TextEditingController(text: "Reserva C${index + 1}");
+
+      // 2. VALIDACIONES DE TIPO DE CAJÓN (Se mantienen igual)
+      if (ParkingState.esDiscapacitado[index]) {
+        bool? continuar = await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text("Espacio Azul"),
+            content: const Text("Este espacio es exclusivo para personas con discapacidad. ¿Continuar?"),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(context, false), child: const Text("NO")),
+              ElevatedButton(onPressed: () => Navigator.pop(context, true), child: const Text("SÍ")),
+            ],
+          ),
+        );
+        if (continuar != true) return;
+      }
+
+      if (ParkingState.esElectrico[index]) {
+        bool? continuar = await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text("Espacio para carro electrico"),
+            content: const Text("Este espacio es exclusivo para carros electricos. ¿Continuar?"),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(context, false), child: const Text("NO")),
+              ElevatedButton(onPressed: () => Navigator.pop(context, true), child: const Text("SÍ")),
+            ],
+          ),
+        );
+        if (continuar != true) return;
+      }
+
+      // 3. DIÁLOGO DE CONFIGURACIÓN
+      int horas = 1;
+      String metodo = "Saldo";
+
+      showDialog(
+        context: context,
+        builder: (context) => StatefulBuilder(
+          builder: (context, setDialogState) {
+            String? mensajeErrorDinamico;
+            bool tieneConflicto = false;
+            bool horaPasada = llegadaProgramada == "INVÁLIDA";
+            bool fueraDeHorario = false;
+
+            // 1. Lógica estricta para el aviso (Solo si es HOY y está ocupado)
+            bool mostrarAvisoOcupado = false;
+            bool esHoy = false;
+            if (!horaPasada) {
+              DateTime fechaSel = DateTime.parse(llegadaProgramada);
+              DateTime ahora = DateTime.now();
+              esHoy = (fechaSel.year == ahora.year && fechaSel.month == ahora.month && fechaSel.day == ahora.day);
+
+              if (esHoy && (ParkingState.ocupados[index] || ParkingState.tiempos[index] == -1)) {
+                mostrarAvisoOcupado = true;
+              }
+
+              // Lógica de horario de apertura/cierre (se mantiene igual)
+              DateTime entrada = DateTime.parse(llegadaProgramada);
+              DateTime salida = entrada.add(Duration(hours: horas));
+              int minEntrada = entrada.hour * 60 + entrada.minute;
+              int minSalida = salida.hour * 60 + salida.minute;
+              int minApertura = int.parse(est.horaApertura.split(':')[0]) * 60 + int.parse(est.horaApertura.split(':')[1]);
+              int minCierre = int.parse(est.horaCierre.split(':')[0]) * 60 + int.parse(est.horaCierre.split(':')[1]);
+              if (minEntrada < minApertura || minSalida > minCierre) fueraDeHorario = true;
+            }
+
+            bool botonBloqueado = horaPasada || fueraDeHorario;
+            double total = 5.0 + (est.precioHora * horas);
+
+            return AlertDialog(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+              title: Text("Reserva Cajón C${index + 1}"),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // --- AQUÍ AGREGAS EL AVISO ---
+                    if ((ParkingState.ocupados[index] || ParkingState.tiempos[index] == -1) && esHoy)
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(12),
+                        margin: const EdgeInsets.only(bottom: 15),
+                        decoration: BoxDecoration(
+                          color: Colors.amber.shade100,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: Colors.amber.shade800, width: 1),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(Icons.warning_amber_rounded, color: Colors.amber.shade900, size: 20),
+                            const SizedBox(width: 10),
+                            const Expanded(
+                              child: Text(
+                                "Cajón ocupado por ahora. Selecciona una fecha o hora futura.",
+                                style: TextStyle(fontSize: 12, color: Color(0xFF7B5B00), fontWeight: FontWeight.bold),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+
+                    if (fueraDeHorario)
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        margin: const EdgeInsets.only(bottom: 10),
+                        decoration: BoxDecoration(color: Colors.red.shade100, borderRadius: BorderRadius.circular(10)),
+                        child: Text(
+                          "🚫 Horario no disponible\nCierre: ${est.horaCierre.substring(0,5)}",
+                          style: const TextStyle(color: Colors.red, fontWeight: FontWeight.bold, fontSize: 12),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                    // Selector de vehículo
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      decoration: BoxDecoration(
+                          color: Colors.grey.shade100,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: Colors.grey.shade300)
+                      ),
+                      child: DropdownButtonHideUnderline(
+                        child: DropdownButton<String>(
+                          isExpanded: true,
+                          hint: const Text("Seleccionar vehículo"),
+                          value: (vehiculoSeleccionado is Map)
+                              ? vehiculoSeleccionado['id_vehiculo'].toString()
+                              : vehiculoSeleccionado?.toString(),
+                          items: [
+                            DropdownMenuItem(
+                              value: "agregar",
+                              child: Row(
+                                children: [
+                                  Icon(Icons.add_circle, color: Colors.blue.shade700, size: 20),
+                                  const SizedBox(width: 10),
+                                  const Text("Agregar nuevo", style: TextStyle(color: Colors.blue, fontWeight: FontWeight.bold)),
+                                ],
+                              ),
+                            ),
+                            ...misVehiculosParaReserva.map((v) {
+                              return DropdownMenuItem<String>(
+                                value: v['id_vehiculo'].toString(),
+                                child: Text("${v['modelo']} (${v['placa']})"),
+                              );
+                            }).toList(),
+                          ],
+                          onChanged: (val) {
+                            if (val == "agregar") {
+                              Navigator.pop(context);
+                              Navigator.push(context, MaterialPageRoute(builder: (_) => const MisVehiculos()))
+                                  .then((_) => _confirmarReserva(index));
+                            } else {
+                              setDialogState(() => vehiculoSeleccionado = val);
+                            }
+                          },
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 15),
+                    TextField(
+                      controller: nombreController,
+                      decoration: const InputDecoration(labelText: "Nombre para tu reserva", prefixIcon: Icon(Icons.edit)),
+                    ),
+                    const SizedBox(height: 10),
+
+                    InputDecorator(
+                      decoration: const InputDecoration(labelText: "Día y hora de llegada", border: InputBorder.none),
+                      child: ListTile(
+                        leading: const Icon(Icons.calendar_today, color: Color(0xFF166088)),
+                        title: Text(
+                          llegadaProgramada == "INVÁLIDA"
+                              ? "Toca para elegir"
+                              : _formatearFechaVisual(llegadaProgramada),
+                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                        ),
+                        subtitle: llegadaProgramada == "INVÁLIDA"
+                            ? null
+                            : Text("A las ${llegadaProgramada.substring(11, 16)} hrs"),
+                        onTap: () => _seleccionarHoraLlegada(context, setDialogState),
+                      ),
+                    ),
+
+                    const Divider(),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        IconButton(icon: const Icon(Icons.remove_circle), onPressed: () => setDialogState(() => horas > 1 ? horas-- : null)),
+                        Text("$horas hr(s)", style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                        IconButton(icon: const Icon(Icons.add_circle), onPressed: () => setDialogState(() => horas++)),
+                      ],
+                    ),
+                    RadioListTile(title: const Text("Saldo NexPark"), value: "Saldo", groupValue: metodo, onChanged: (v) => setDialogState(() => metodo = v!)),
+                    RadioListTile(title: const Text("Tarjeta de débito/crédito"), value: "Stripe", groupValue: metodo, onChanged: (v) => setDialogState(() => metodo = v!)),
+                    Text("Total: \$${total.toStringAsFixed(2)}", style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.green)),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(onPressed: () => Navigator.pop(context), child: const Text("Cancelar")),
+                ElevatedButton(
+                  onPressed: botonBloqueado ? null : () async {
+                    // --- LOADING DE VALIDACIÓN FINAL ---
+                    showDialog(
+                      context: context,
+                      barrierDismissible: false,
+                      builder: (context) => const Center(child: CircularProgressIndicator(color: Color(0xFF166088))),
+                    );
+
+                    try {
+                      final checkRes = await http.get(Uri.parse(
+                          'https://carlossalinas.webpro1213.com/api/check_disponibilidad.php?id_espacio=${ParkingState.idsReales[index]}'
+                      )).timeout(const Duration(seconds: 5));
+
+                      if (Navigator.canPop(context)) Navigator.pop(context); // Cierra loading de validación
+
+                      if (checkRes.statusCode == 200) {
+                        final data = json.decode(checkRes.body);
+                        if (data['status'] == 'busy_future') {
+                          DateTime proxima = DateTime.parse(data['proxima_reserva']);
+                          DateTime entradaUsuario = DateTime.parse(llegadaProgramada);
+                          DateTime salidaUsuario = entradaUsuario.add(Duration(hours: horas));
+
+                          // Validamos si el choque es el mismo día seleccionado
+                          if (entradaUsuario.year == proxima.year &&
+                              entradaUsuario.month == proxima.month &&
+                              entradaUsuario.day == proxima.day &&
+                              salidaUsuario.isAfter(proxima.subtract(const Duration(minutes: 15)))) {
+
+                            _mostrarAlertaError("Conflicto", "Ya existe una reserva para este horario del día seleccionado, favor escoger otro cajon o dia.");
+                            return;
+                          }
+                        }
+                      }
+                    } catch (e) {
+                      if (Navigator.canPop(context)) Navigator.pop(context);
+                    }
+
+                    // Validación de saldo
+                    if (metodo == "Saldo" && double.parse(homeState.saldo) < total) {
+                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Saldo insuficiente")));
+                      return;
+                    }
+
+                    String idVehiculoAEnviar = (vehiculoSeleccionado != null && vehiculoSeleccionado != "agregar")
+                        ? (vehiculoSeleccionado is Map ? vehiculoSeleccionado['id_vehiculo'].toString() : vehiculoSeleccionado.toString())
+                        : "null";
+
+                    // Cerramos el diálogo de configuración antes de procesar el pago
+                    if (Navigator.canPop(context)) Navigator.pop(context);
+
+                    _procesarPago(index, est, horas, total, metodo, nombreController.text, idVehiculoAEnviar);
+                  },
+                  child: const Text("Confirmar Pago"),
+                )
+              ],
+            );
+          },
+        ),
+      );
+    } catch (e) {
+      // Si algo falla al inicio, nos aseguramos de cerrar el loading
+      if (Navigator.canPop(context)) Navigator.pop(context);
+      debugPrint("Error en _confirmarReserva: $e");
+    }
   }
 
 
@@ -2024,7 +2144,10 @@ class _ParkingSlotItemState extends State<ParkingSlotItem> {
 
               _mostrarAlertaExito("¡Reserva Lista!", "Tu QR ya está disponible.");
             } else {
-              _mostrarAlertaError("Error", "El pago se hizo pero no pudimos apartar el lugar: ${resReserva['message']}");
+              _mostrarAlertaError(
+                  "Atención",
+                  "El pago se realizó con éxito, pero justo acaba de ser ocupado. El monto ha sido abonado a tu saldo NexPark. Lamentamos la molestia."
+              );
             }
           }
         }
@@ -2041,77 +2164,91 @@ class _ParkingSlotItemState extends State<ParkingSlotItem> {
   }
   @override
   Widget build(BuildContext context) {
-    bool ocupado = ParkingState.ocupados[widget.index];
-    bool esDis = ParkingState.esDiscapacitado[widget.index];
-    bool esElec = ParkingState.esElectrico[widget.index];
-    int tiempoRestante = ParkingState.tiempos[widget.index]; // -1: cortesía, -2: futura lejana
-    int idDueno = ParkingState.duenos[widget.index];
-    bool soyYo = (idDueno != 0 && idDueno == ParkingState.idUsuarioActual);
+    final int index = widget.index;
+    final bool ocupado = ParkingState.ocupados[index];
+    final int tiempoRestante = ParkingState.tiempos[index];
+    final int idDuenoServidor = ParkingState.duenos[index];
+    final int miId = ParkingState.idUsuarioActual;
 
-    // --- LÓGICA DE COLORES Y ICONOS ---
+    // Accedemos al estado del Home para revisar tus reservas locales
+    final homeState = context.findAncestorStateOfType<_HomePageState>();
+
+    // 1. DETERMINACIÓN DE PROPIEDAD REFORZADA (Sin cambiar el nombre de tu variable)
+    // Ahora soyYo es true si: El servidor dice que soy yo O si mi lista local dice que tengo este cajón.
+    bool soyYo = (idDuenoServidor != 0 && idDuenoServidor.toString() == miId.toString());
+
+    // Agregamos este chequeo extra para que no dependas solo del servidor
+    if (!soyYo && homeState != null) {
+      soyYo = homeState.misReservas.any((r) {
+        String numLimpio = r.espacio.replaceAll(RegExp(r'[^0-9]'), '');
+        return numLimpio == (index + 1).toString();
+      });
+    }
+
     Color colorCajon;
     IconData iconoCajon;
     String textoAbajo = "";
 
+    // --- JERARQUÍA DE PRIORIDAD (Tu lógica original intacta) ---
+
     if (soyYo) {
       colorCajon = Colors.yellow.shade700;
       iconoCajon = Icons.stars;
-      textoAbajo = (tiempoRestante > 0)
-          ? ParkingState.formatearTiempo(tiempoRestante)
-          : "MI LUGAR";
-    } else if (ocupado) {
+
+      if (ocupado && tiempoRestante > 0) {
+        textoAbajo = "MI LUGAR: ${ParkingState.formatearTiempo(tiempoRestante)}";
+      } else if (ocupado && tiempoRestante <= 0) {
+        textoAbajo = "TIEMPO AGOTADO";
+      } else {
+        textoAbajo = "MI RESERVA";
+      }
+    }
+    else if (ocupado) {
       colorCajon = Colors.red.shade400;
       iconoCajon = Icons.lock;
       textoAbajo = "OCUPADO";
-    } else if (tiempoRestante == -1) {
-      // ESTADO APARTADO (Menos de 15 min para que llegue el dueño A) 
+    }
+    else if (tiempoRestante == -1) {
       colorCajon = Colors.orange.shade400;
       iconoCajon = Icons.history;
       textoAbajo = "APARTADO";
-    } else {
-      // ESTADO LIBRE O RESERVA FUTURA (Aquí entra el Usuario B cuando faltan 5 horas)
-      if (esDis) {
+    }
+    else {
+      if (ParkingState.esDiscapacitado[index]) {
         colorCajon = Colors.blue.shade600;
         iconoCajon = Icons.accessible;
-      } else if (esElec) {
+      } else if (ParkingState.esElectrico[index]) {
         colorCajon = Colors.teal.shade500;
         iconoCajon = Icons.bolt;
       } else {
-        // Si tiene una reserva futura lejana (-2), lo pintamos verde igual para el Usuario B
         colorCajon = Colors.green.shade500;
         iconoCajon = Icons.local_parking;
       }
       textoAbajo = "LIBRE";
     }
 
+
     return GestureDetector(
       onTap: () {
-        _verificarSaldoYReservar(widget.index);
-
+        // 1. Si soy yo, muestro mi QR (Esto se mantiene igual)
         if (soyYo) {
           _mostrarQRIndividual(widget.index);
           return;
         }
 
-        // 2. Bloqueo físico: Alguien está dentro
-        if (ocupado) {
+        // 2. AVISO (Opcional): Si el cajón está ocupado o apartado hoy,
+        // lanzamos un SnackBar informativo, pero NO ponemos 'return'.
+        if (ocupado || tiempoRestante == -1) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text("Este cajón está ocupado actualmente")),
+            const SnackBar(
+              content: Text("Ocupado hoy. Puedes agendar para una fecha futura."),
+              duration: Duration(seconds: 2),
+            ),
           );
-          return;
         }
 
-        // 3. Bloqueo de Cortesía: El Usuario A llega en menos de 15 min
-        if (tiempoRestante == -1) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text("Espacio reservado: El dueño está por llegar")),
-          );
-          return;
-        }
-
-        // 4. DISPONIBILIDAD PARA USUARIO B
-        // Si tiempoRestante es 0 (libre) o -2 (reserva futura del Usuario A a las 5 horas)
-        // el Usuario B SÍ PUEDE presionar y abrir el diálogo de reserva.
+        // 3. LLAMADA A LA FUNCIÓN DE RESERVA
+        // Al quitar los 'return' de arriba, esta línea siempre se ejecutará.
         _confirmarReserva(widget.index);
       },
       child: AnimatedContainer(
