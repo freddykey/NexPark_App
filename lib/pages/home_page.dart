@@ -118,23 +118,31 @@ class ParkingState {
 
   static Future<void> initNotificaciones() async {
     await Permission.notification.request();
-    const androidSettings = AndroidInitializationSettings('launcher_icon');
-    await notifications.initialize(const InitializationSettings(android: androidSettings));
+
+    const androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
+
+    // EL CAMBIO ESTÁ AQUÍ (Línea 126)
+    await notifications.initialize(
+        settings: const InitializationSettings(android: androidSettings) // <-- Agregué "settings:"
+    );
   }
 
   static void notificar(String mensaje) async {
     const androidDetails = AndroidNotificationDetails(
-      'canal_nexpark',
+      'nex_park_alerts', // Cambié esto para que coincida con tu PHP
       'NexPark Alerts',
+      channelDescription: 'Alertas de estado de estacionamiento',
       importance: Importance.max,
       priority: Priority.high,
-      icon: 'launcher_icon',
+      icon: '@mipmap/ic_launcher',
     );
+
+    // CORRECCIÓN: Se agregan los nombres de los parámetros requeridos
     await notifications.show(
-        0,
-        'NexPark',
-        mensaje,
-        const NotificationDetails(android: androidDetails)
+        id: 0,              // El ID de la notificación
+        title: 'NexPark',   // El título
+        body: mensaje,      // El cuerpo (tu variable mensaje)
+        notificationDetails: const NotificationDetails(android: androidDetails)
     );
   }
 
@@ -150,9 +158,38 @@ class ParkingState {
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
+
+  // INSTANCIA ESTÁTICA
+  static final FlutterLocalNotificationsPlugin notifications = FlutterLocalNotificationsPlugin();
+
+  // MÉTODO ESTÁTICO DE INICIALIZACIÓN
+  static Future<void> initNotificaciones() async {
+    const androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
+    await notifications.initialize(
+      settings: const InitializationSettings(android: androidSettings),
+    );
+  }
+
+  // MÉTODO ESTÁTICO PARA NOTIFICAR (DIBUJAR)
+  static void notificar(String mensaje) async {
+    const androidDetails = AndroidNotificationDetails(
+      'nex_park_alerts',
+      'NexPark Alerts',
+      importance: Importance.max,
+      priority: Priority.high,
+      icon: '@mipmap/ic_launcher',
+    );
+
+    await notifications.show(
+      id: DateTime.now().millisecondsSinceEpoch ~/ 1000,
+      title: 'NexPark',
+      body: mensaje,
+      notificationDetails: const NotificationDetails(android: androidDetails),
+    );
+  }
+
   @override
   State<HomePage> createState() => _HomePageState();
-
 }
 
 class _HomePageState extends State<HomePage>with SingleTickerProviderStateMixin {
@@ -169,6 +206,7 @@ class _HomePageState extends State<HomePage>with SingleTickerProviderStateMixin 
   bool cambiandoSucursal = false;
   bool alertaMostrada = false;
   late TabController _tabController;
+
 
   final ScreenshotController screenshotController = ScreenshotController();
 
@@ -231,6 +269,68 @@ class _HomePageState extends State<HomePage>with SingleTickerProviderStateMixin 
       await Permission.notification.request();
     }
   }
+
+  Widget _buildCroquisView() {
+    final String idEst = seleccionado?.id.toString() ?? '0';
+    final int totalPisos = (idEst == '1' || idEst == '3') ? 2 : 1;
+    final String rutaImagen = 'assets/maps/${idEst}_piso$pisoSeleccionado.png';
+
+    return Container(
+      width: double.infinity,
+      height: double.infinity,
+      color: const Color(0xFF1E1E1E), // Un fondo oscuro hace que el mapa resalte más
+      child: Stack(
+        children: [
+          // InteractiveViewer permite el Zoom (pellizco) y el Movimiento (arrastre)
+          InteractiveViewer(
+            alignment: Alignment.center,
+            minScale: 0.5, // Permite alejar el mapa un poco
+            maxScale: 5.0, // Permite un zoom profundo para ver cajones específicos
+            boundaryMargin: const EdgeInsets.all(double.infinity), // Margen infinito para moverlo libremente
+            clipBehavior: Clip.none, // Evita que la imagen se corte al moverla fuera de los bordes
+            child: Center(
+              child: Image.asset(
+                rutaImagen,
+                fit: BoxFit.contain, // Mantiene la proporción para que no se deforme
+                width: MediaQuery.of(context).size.width,
+                errorBuilder: (context, error, stackTrace) => Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.map_outlined, size: 60, color: Colors.white54),
+                    const SizedBox(height: 10),
+                    Text("No se encontró: $rutaImagen",
+                        style: const TextStyle(color: Colors.white70)),
+                  ],
+                ),
+              ),
+            ),
+          ),
+
+          // Indicador visual de que se puede interactuar (Opcional)
+          Positioned(
+            top: 10,
+            right: 10,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.black45,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const Row(
+                children: [
+                  Icon(Icons.zoom_in, color: Colors.white, size: 16),
+                  SizedBox(width: 4),
+                  Text("Zoom habilitado", style: TextStyle(color: Colors.white, fontSize: 10)),
+                ],
+              ),
+            ),
+          ),
+
+        ],
+      ),
+    );
+  }
+
 
   Future<void> _compartirQRCompleto(String token, String espacio) async {
     try {
@@ -687,7 +787,7 @@ class _HomePageState extends State<HomePage>with SingleTickerProviderStateMixin 
 
   Future<void> _simularSalidaQR(String token) async {
     try {
-      // Mostramos un indicador de carga opcional si lo deseas
+      // 1. Hacemos la petición directamente (como en entrar)
       final response = await http.post(
         Uri.parse('https://carlossalinas.webpro1213.com/api/validar_salida.php'),
         body: {'token_qr': token},
@@ -696,36 +796,35 @@ class _HomePageState extends State<HomePage>with SingleTickerProviderStateMixin 
       if (response.body.isNotEmpty) {
         final res = json.decode(response.body);
 
-        if (res['status'] == 'success') {
-          // 1. Actualizamos el mapa para que el cajón pase a verde/libre
-          await _actualizarEstadoDesdeServidor();
+        // 2. Verificamos si el widget sigue ahí antes de usar el context
+        if (!mounted) return;
 
-          // 2. Refrescamos la lista de reservas para que desaparezca la estrella amarilla
+        if (res['status'] == 'success') {
+          // 3. Actualizamos estados locales
+          await _actualizarEstadoDesdeServidor();
           _obtenerReservas();
 
-          // 3. Mostramos el mensaje (incluirá info de la multa si hubo una)
+          // 4. Mostramos éxito
+          double multa = double.tryParse(res['multa'].toString()) ?? 0.0;
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(res['message']),
-              backgroundColor: res['multa'] > 0 ? Colors.redAccent : Colors.blueAccent,
-              duration: const Duration(seconds: 5),
+                content: Text(res['message']),
+                backgroundColor: multa > 0 ? Colors.redAccent : Colors.green
             ),
           );
         } else {
-          // Error (ej. la reserva no estaba activa o el token falló)
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text("Error: ${res['message']}"),
-              backgroundColor: Colors.orange,
-            ),
+            SnackBar(content: Text("Error: ${res['message']}"), backgroundColor: Colors.orange),
           );
         }
       }
     } catch (e) {
       print("Error en salida: $e");
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Error de conexión al procesar salida")),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Error de conexión")),
+        );
+      }
     }
   }
 
@@ -817,13 +916,13 @@ class _HomePageState extends State<HomePage>with SingleTickerProviderStateMixin 
     );
   }
 
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         backgroundColor: const Color(0xFF166088),
         foregroundColor: Colors.white,
-
         title: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -854,7 +953,6 @@ class _HomePageState extends State<HomePage>with SingleTickerProviderStateMixin 
         ),
       ),
       drawer: _buildDrawer(),
-
       body: SafeArea(
         child: Stack(
           children: [
@@ -868,9 +966,41 @@ class _HomePageState extends State<HomePage>with SingleTickerProviderStateMixin 
                 Expanded(
                   child: TabBarView(
                     controller: _tabController,
+                    // BLOQUEO 1: Evita que al mover el mapa cambies a "Cajones" o "QR"
+                    physics: const NeverScrollableScrollPhysics(),
                     children: [
                       _buildParkingGrid(),
-                      const Center(child: Text("Vista de Mapa en desarrollo")),
+
+                      DefaultTabController(
+                        length: 2,
+                        child: Column(
+                          children: [
+                            Container(
+                              color: const Color(0xFF166088),
+                              child: const TabBar(
+                                indicatorColor: Colors.white,
+                                labelColor: Colors.white,
+                                unselectedLabelColor: Colors.white70,
+                                labelStyle: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                                tabs: [
+                                  Tab(text: "LOCALIZAR"),
+                                  Tab(text: "CROQUIS"),
+                                ],
+                              ),
+                            ),
+                            Expanded(
+                              child: TabBarView(
+                                // BLOQUEO 2: Evita que al mover el mapa cambies a "LOCALIZAR"
+                                physics: const NeverScrollableScrollPhysics(),
+                                children: [
+                                  const Center(child: Text("Pantalla: Localizar Estacionamiento")),
+                                  _buildCroquisView(),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                       _buildQRView(),
                     ],
                   ),
@@ -878,7 +1008,7 @@ class _HomePageState extends State<HomePage>with SingleTickerProviderStateMixin 
               ],
             ),
 
-            // CAPA DE CARGA AL CAMBIAR SUCURSAL
+
             if (cambiandoSucursal)
               Container(
                 color: Colors.white.withOpacity(0.8),
@@ -927,6 +1057,15 @@ class _HomePageState extends State<HomePage>with SingleTickerProviderStateMixin 
             onTap: () {
               Navigator.pop(context); // Cierra el drawer
               Navigator.push(context, MaterialPageRoute(builder: (_) => const MisVehiculos()));
+            },
+          ),
+
+          ListTile(
+            leading: const Icon(Icons.directions_car, color: Color(0xFF166088)),
+            title: const Text("Ticket (solo para beta)"),
+            onTap: () {
+              Navigator.pop(context); // Cierra el drawer
+              Navigator.push(context, MaterialPageRoute(builder: (_) => const TicketPage()));
             },
           ),
           const Spacer(),
@@ -1192,22 +1331,31 @@ class _HomePageState extends State<HomePage>with SingleTickerProviderStateMixin 
                 ),
 
                 const SizedBox(height: 12),
-                // 2. BOTÓN DE SALIDA (Solo si está 'activo')
+// 2. BOTÓN DE SALIDA (Solo si está 'activo')
                 if (r.estado.toLowerCase() == 'activo') ...[
                   SizedBox(
                     width: double.infinity,
                     height: 48,
                     child: ElevatedButton.icon(
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.orange.shade900, // Color fuerte para advertir salida
+                        backgroundColor: Colors.red.shade800, // Rojo para diferenciar de la entrada
                         foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                       ),
                       onPressed: () {
-                        Navigator.pop(context);
-                        _simularSalidaQR(r.token_qr); // Función que llama a validar_salida.php
+                        // 1. Cerramos el diálogo inmediatamente
+                        // Usamos rootNavigator: true por si tienes diálogos anidados
+                        Navigator.of(context, rootNavigator: true).pop();
+
+                        // 2. Ejecutamos la salida
+                        // El retraso ayuda a que la animación de cierre de Flutter termine limpia
+                        Future.delayed(const Duration(milliseconds: 150), () {
+                          _simularSalidaQR(r.token_qr);
+                        });
                       },
                       icon: const Icon(Icons.logout),
-                      label: const Text("REGISTRAR SALIDA / LIBERAR", style: TextStyle(fontWeight: FontWeight.bold)),
+                      label: const Text("REGISTRAR SALIDA / LIBERAR",
+                          style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1.1)),
                     ),
                   ),
                   const SizedBox(height: 12),
@@ -1247,6 +1395,7 @@ class _HomePageState extends State<HomePage>with SingleTickerProviderStateMixin 
       },
     );
   }
+
 
 // NUEVA FUNCIÓN DE COMPARTIR QUE RECIBE EL CONTROLADOR
   Future<void> _compartirTicketEspecifico(ScreenshotController controller, String token, String espacio) async {
@@ -2197,8 +2346,6 @@ class _ParkingSlotItemState extends State<ParkingSlotItem> {
 
       if (ocupado && tiempoRestante > 0) {
         textoAbajo = "MI LUGAR: ${ParkingState.formatearTiempo(tiempoRestante)}";
-      } else if (ocupado && tiempoRestante <= 0) {
-        textoAbajo = "TIEMPO AGOTADO";
       } else {
         textoAbajo = "MI RESERVA";
       }
@@ -2236,8 +2383,6 @@ class _ParkingSlotItemState extends State<ParkingSlotItem> {
           return;
         }
 
-        // 2. AVISO (Opcional): Si el cajón está ocupado o apartado hoy,
-        // lanzamos un SnackBar informativo, pero NO ponemos 'return'.
         if (ocupado || tiempoRestante == -1) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(

@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -31,6 +32,35 @@ class _LoginPageState extends State<LoginPage> {
         behavior: SnackBarBehavior.floating,
       ),
     );
+  }
+
+  Future<void> actualizarTokenFCM(int idUsuario) async {
+    print("DEBUG: Iniciando proceso de token para el usuario: $idUsuario"); // <-- Control 1
+    try {
+      FirebaseMessaging messaging = FirebaseMessaging.instance;
+
+      print("DEBUG: Solicitando token a Firebase..."); // <-- Control 2
+      String? token = await messaging.getToken();
+
+      if (token != null) {
+        print("DEBUG: Token obtenido con éxito: $token"); // <-- Control 3
+
+        var url = Uri.parse('https://carlossalinas.webpro1213.com/api/actualizar_token.php');
+
+        print("DEBUG: Enviando token al servidor Hostinger..."); // <-- Control 4
+        var response = await http.post(url, body: {
+          'id_usuario': idUsuario.toString(),
+          'fcm_token': token,
+        });
+
+        print("DEBUG: Respuesta del servidor: ${response.body}"); // <-- Control 5
+
+      } else {
+        print("DEBUG: Firebase no devolvió ningún token (es null)");
+      }
+    } catch (e) {
+      print("DEBUG: ERROR CRÍTICO: $e"); // <-- Control 6
+    }
   }
 
   Future<void> loginConGoogle() async {
@@ -71,6 +101,7 @@ class _LoginPageState extends State<LoginPage> {
 
             var idRaw = u['id'] ?? u['id_usuario'];
             await prefs.setInt('id_usuario', int.parse(idRaw.toString()));
+            await prefs.setString('id_usuario_str', idRaw.toString());
 
             await prefs.setString('nombre_usuario', u['nombre']);
             await prefs.setString('correo_usuario', account.email);
@@ -82,6 +113,7 @@ class _LoginPageState extends State<LoginPage> {
             await prefs.setString('telefono_usuario', u['telefono']?.toString() ?? "");
             await prefs.setString('saldo_usuario', u['saldo']?.toString() ?? "0");
             await prefs.setString('fecha_registro', u['fecha_registro']?.toString() ?? "");
+            await actualizarTokenFCM(int.parse(idRaw.toString()));
 
             if (!mounted) return;
             Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const HomePage()));
@@ -136,6 +168,7 @@ class _LoginPageState extends State<LoginPage> {
 
         var idRaw = u['id'] ?? u['id_usuario'];
         await prefs.setInt('id_usuario', int.parse(idRaw.toString()));
+        await prefs.setString('id_usuario_str', idRaw.toString());
 
         await prefs.setString('nombre_usuario', u['nombre']);
         await prefs.setString('correo_usuario', correo);
@@ -146,6 +179,7 @@ class _LoginPageState extends State<LoginPage> {
         await prefs.setString('telefono_usuario', u['telefono']?.toString() ?? "");
         await prefs.setString('saldo_usuario', u['saldo']?.toString() ?? "0");
         await prefs.setString('fecha_registro', u['fecha_registro']?.toString() ?? "");
+        await actualizarTokenFCM(int.parse(idRaw.toString()));
 
         if (!mounted) return;
         Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const HomePage()));

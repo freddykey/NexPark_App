@@ -14,11 +14,59 @@
       },
       "oauth_client": [
         {
+          "client_id": "568559107230-9bii0ba8ktqpnsfmup9d87tmna78f9b9.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.nextpark.nextpark",
+            "certificate_hash": "2f3949605ecf1a2e73d49214a59cb19cb06237bf"
+          }
+        },
+        {
+          "client_id": "568559107230-9oe1v8bdn9nu5uqa919cjiqgb1cqm9db.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.nextpark.nextpark",
+            "certificate_hash": "cfd2e9531c06398a6a8bc86fe5bb9074964cea62"
+          }
+        },
+        {
+          "client_id": "568559107230-cvjo33omlc35bp8l0ovh3rkvdsiqmfm0.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.nextpark.nextpark",
+            "certificate_hash": "c4e7ef0e0e61679d9e05da377e0e5c72495ce074"
+          }
+        },
+        {
           "client_id": "568559107230-j8ebdh6d5ak8osnujremffq0p47ki20o.apps.googleusercontent.com",
           "client_type": 1,
           "android_info": {
             "package_name": "com.nextpark.nextpark",
             "certificate_hash": "05fa8dde8cecd9f017b4478ffe36de66b0c24e72"
+          }
+        },
+        {
+          "client_id": "568559107230-lvbh4vov9u6luphgsgvro5k5t9qsdre3.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.nextpark.nextpark",
+            "certificate_hash": "40b9bd433c4650b3b5b87ad6831fac90ecdbbfbb"
+          }
+        },
+        {
+          "client_id": "568559107230-mo2q67piaa8kj2r9pis94dgcm90vm207.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.nextpark.nextpark",
+            "certificate_hash": "7168145966353d1018aa19c2a7914c1350ebb153"
+          }
+        },
+        {
+          "client_id": "568559107230-tgg2t27tjf0fnv6j4ihkcelo55fj4jlv.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.nextpark.nextpark",
+            "certificate_hash": "8141f7bdaa51236d555077bb6385f4c92c67eea1"
           }
         },
         {
