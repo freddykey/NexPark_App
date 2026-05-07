@@ -19,6 +19,9 @@ import 'package:path_provider/path_provider.dart';
 import 'package:screenshot/screenshot.dart';
 import 'dart:io';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 // MODELOS DE DATOS
 
@@ -30,6 +33,8 @@ class Estacionamiento {
   final double precioHora;
   final String horaApertura;
   final String horaCierre;
+  final String? latitud;
+  final String? longitud;
 
   Estacionamiento({
     required this.id,
@@ -39,6 +44,8 @@ class Estacionamiento {
     required this.precioHora,
     required this.horaApertura,
     required this.horaCierre,
+    this.latitud,
+    this.longitud,
   });
 
   factory Estacionamiento.fromJson(Map<String, dynamic> json) {
@@ -50,6 +57,8 @@ class Estacionamiento {
       precioHora: double.tryParse(json['precio_hora']?.toString() ?? '0.0') ?? 0.0,
       horaApertura: json['hora_apertura'] ?? "00:00:00",
       horaCierre: json['hora_cierre'] ?? "23:59:59",
+      latitud: json['latitud'],
+      longitud: json['longitud'],
     );
   }
 }
@@ -193,6 +202,7 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage>with SingleTickerProviderStateMixin {
+
   String nombre = "Cargando...";
   String correo = "...";
   String foto = "";
@@ -895,7 +905,7 @@ class _HomePageState extends State<HomePage>with SingleTickerProviderStateMixin 
             ...misEstacionamientos.map((est) => ListTile(
               leading: const Icon(Icons.business, color: Color(0xFF166088)),
               title: Text(est.nombre),
-              subtitle: Text("${est.totalCajones} cajones • \$${est.precioHora}/hr + \$5 de reserva"),
+              subtitle: Text("${est.totalCajones} cajones • \$${est.precioHora}/hr + \$10 de reserva"),
               onTap: () async {
                 final prefs = await SharedPreferences.getInstance();
                 await prefs.setInt('estacionamiento_id', est.id);
@@ -966,7 +976,7 @@ class _HomePageState extends State<HomePage>with SingleTickerProviderStateMixin 
                 Expanded(
                   child: TabBarView(
                     controller: _tabController,
-                    // BLOQUEO 1: Evita que al mover el mapa cambies a "Cajones" o "QR"
+
                     physics: const NeverScrollableScrollPhysics(),
                     children: [
                       _buildParkingGrid(),
@@ -990,10 +1000,10 @@ class _HomePageState extends State<HomePage>with SingleTickerProviderStateMixin 
                             ),
                             Expanded(
                               child: TabBarView(
-                                // BLOQUEO 2: Evita que al mover el mapa cambies a "LOCALIZAR"
+
                                 physics: const NeverScrollableScrollPhysics(),
                                 children: [
-                                  const Center(child: Text("Pantalla: Localizar Estacionamiento")),
+                                  LocalizadorMapa(estacionamientos: misEstacionamientos),
                                   _buildCroquisView(),
                                 ],
                               ),
@@ -1452,6 +1462,113 @@ class _HomePageState extends State<HomePage>with SingleTickerProviderStateMixin 
   }
 
 
+}
+
+class LocalizadorMapa extends StatelessWidget {
+  final List<Estacionamiento> estacionamientos;
+
+  const LocalizadorMapa({super.key, required this.estacionamientos});
+
+  @override
+  Widget build(BuildContext context) {
+    if (estacionamientos.isEmpty) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    print("Cantidad de estacionamientos cargados: ${estacionamientos.length}");
+    return FlutterMap(
+      options: const MapOptions(
+        // Un centro un poco más equilibrado entre las dos sucursales que tienes
+        initialCenter: LatLng(16.8320, -99.8550),
+        initialZoom: 12.5, // <--- Con 12.5 se verá como en tu captura de pantalla
+      ),
+      children: [
+        TileLayer(
+          urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+          userAgentPackageName: 'com.nexpark.app',
+        ),
+        MarkerLayer(
+          markers: estacionamientos.map((est) {
+            // ESTO TE DIRÁ LA VERDAD EN LA CONSOLA:
+            print("Estacionamiento: ${est.nombre} | Lat: '${est.latitud}' | Lng: '${est.longitud}'");
+
+            final double? lat = double.tryParse(est.latitud ?? "");
+            final double? lng = double.tryParse(est.longitud ?? "");
+
+            if (lat != null && lng != null) {
+              return Marker(
+                point: LatLng(lat, lng),
+                width: 50,
+                height: 50,
+                child: GestureDetector(
+                  onTap: () => _mostrarDetallesSucursal(context, est, lat, lng),
+                  child: const Icon(
+                    Icons.location_on,
+                    color: Color(0xFF166088),
+                    size: 45,
+                  ),
+                ),
+              );
+            }
+            return const Marker(point: LatLng(0,0), child: SizedBox.shrink());
+          }).toList(),
+        )
+      ],
+    );
+  }
+
+  void _mostrarDetallesSucursal(BuildContext context, Estacionamiento est, double lat, double lng) {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (context) => Container(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(est.nombre, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 10),
+            Text("Tarifa: \$${est.precioHora} por hora"),
+            Text("Horario: ${est.horaApertura} - ${est.horaCierre}"),
+            const SizedBox(height: 20),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF166088),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 15),
+                ),
+                onPressed: () async {
+                  // 1. Limpieza absoluta de coordenadas
+                  final double latitude = double.parse(lat.toStringAsFixed(6));
+                  final double longitude = double.parse(lng.toStringAsFixed(6));
+
+                  // 2. Construcción de la URL de navegación pura
+                  // Usamos 'google.com/maps/dir/' que es el estándar para rutas
+                  final String url = "https://www.google.com/maps/dir/?api=1&destination=$latitude,$longitude&travelmode=driving";
+
+                  final Uri uri = Uri.parse(url);
+
+                  try {
+
+                    await launchUrl(
+                        uri,
+                        mode: LaunchMode.externalApplication
+                    );
+                  } catch (e) {
+                    debugPrint("Error: $e");
+                  }
+                },
+                icon: const Icon(Icons.directions),
+                label: const Text("INICIAR RUTA (GPS) DESDE GOOGLE MAPS"),
+              ),
+            )
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 
@@ -2136,7 +2253,25 @@ class _ParkingSlotItemState extends State<ParkingSlotItem> {
                     ),
                     RadioListTile(title: const Text("Saldo NexPark"), value: "Saldo", groupValue: metodo, onChanged: (v) => setDialogState(() => metodo = v!)),
                     RadioListTile(title: const Text("Tarjeta de débito/crédito"), value: "Stripe", groupValue: metodo, onChanged: (v) => setDialogState(() => metodo = v!)),
-                    Text("Total: \$${total.toStringAsFixed(2)}", style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.green)),
+                    RichText(
+                      textAlign: TextAlign.center,
+                      text: TextSpan(
+                        style: const TextStyle(fontSize: 18, color: Colors.black87), // Estilo base
+                        children: [
+                          const TextSpan(text: "Total: "),
+                          TextSpan(
+                              text: "\$${total.toStringAsFixed(2)}",
+                              style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.green)
+                          ),
+                          const TextSpan(text: "/hora + "),
+                          const TextSpan(
+                              text: "\$10.00",
+                              style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blue)
+                          ),
+                          const TextSpan(text: " de cargo por reservación"),
+                        ],
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -2144,7 +2279,7 @@ class _ParkingSlotItemState extends State<ParkingSlotItem> {
                 TextButton(onPressed: () => Navigator.pop(context), child: const Text("Cancelar")),
                 ElevatedButton(
                   onPressed: botonBloqueado ? null : () async {
-                    // --- LOADING DE VALIDACIÓN FINAL ---
+
                     showDialog(
                       context: context,
                       barrierDismissible: false,
@@ -2211,10 +2346,9 @@ class _ParkingSlotItemState extends State<ParkingSlotItem> {
 
 
 
-
-// ... aquí sigue el resto de tu clase ...
   void _procesarPago(int index, Estacionamiento est, int horas, double monto, String metodo, String nombreR, String idVehiculo) async {
     final homeState = context.findAncestorStateOfType<_HomePageState>();
+    double montoTotal = monto + 10.0;
     try {
       final url = (metodo == "Saldo")
           ? 'https://carlossalinas.webpro1213.com/api/crear_reserva.php'
@@ -2225,13 +2359,12 @@ class _ParkingSlotItemState extends State<ParkingSlotItem> {
         body: {
           'id_usuario': homeState!.idUsuario.toString(),
           'id_espacio': ParkingState.idsReales[index].toString(),
-          'monto': monto.toString(),
+          'monto': montoTotal.toString(),
           'hora_llegada_estimada': llegadaProgramada.substring(0, 19),
           'metodo': metodo,
           'horas': horas.toString(),
           'nombre_reserva': nombreR,
           'id_vehiculo': idVehiculo,
-          // AGREGA ESTA LÍNEA PARA QUE EL PHP SEPA QUÉ HACER
           'tipo_operacion': (metodo == "Stripe") ? 'pago_reserva' : 'reserva_directa',
         },
       );
@@ -2250,7 +2383,9 @@ class _ParkingSlotItemState extends State<ParkingSlotItem> {
 
           if (mounted) {
             _mostrarAlertaExito("¡Reserva Exitosa!", "Tu lugar ha sido apartado correctamente.");
-            homeState._tabController.animateTo(2);
+            Future.delayed(Duration.zero, () {
+              homeState?._tabController.animateTo(2);
+            });
           }
         } else {
 
@@ -2322,15 +2457,21 @@ class _ParkingSlotItemState extends State<ParkingSlotItem> {
     // Accedemos al estado del Home para revisar tus reservas locales
     final homeState = context.findAncestorStateOfType<_HomePageState>();
 
-    // 1. DETERMINACIÓN DE PROPIEDAD REFORZADA (Sin cambiar el nombre de tu variable)
-    // Ahora soyYo es true si: El servidor dice que soy yo O si mi lista local dice que tengo este cajón.
+    // 1. DETERMINACIÓN DE PROPIEDAD REFORZADA
     bool soyYo = (idDuenoServidor != 0 && idDuenoServidor.toString() == miId.toString());
 
-    // Agregamos este chequeo extra para que no dependas solo del servidor
-    if (!soyYo && homeState != null) {
+    if (!soyYo && homeState != null && homeState.seleccionado != null) {
+      // Obtenemos el ID del estacionamiento que el usuario abrió en el mapa
+      int idActual = homeState.seleccionado!.id;
+
       soyYo = homeState.misReservas.any((r) {
         String numLimpio = r.espacio.replaceAll(RegExp(r'[^0-9]'), '');
-        return numLimpio == (index + 1).toString();
+        bool esMismoCajon = numLimpio == (index + 1).toString();
+
+        // Comparación por ID: Rápida y precisa
+        bool esMismoEst = r.idEstacionamiento == idActual;
+
+        return esMismoCajon && esMismoEst;
       });
     }
 
@@ -2436,4 +2577,5 @@ class _ParkingSlotItemState extends State<ParkingSlotItem> {
       ),
     );
   }
+
 }
